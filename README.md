@@ -44,8 +44,11 @@ npm install
 npm run build
 npm test
 cargo test
+bash scripts/install-local.sh --install-dir "$HOME/bin" --print-config
 
 node dist/src/cli.js doctor
+node dist/src/cli.js mcp-config --command "$HOME/bin/deepseek-harness-mcp"
+node dist/src/cli.js mcp-config --format codex-toml --command "$HOME/bin/deepseek-harness-mcp"
 node dist/src/cli.js plan examples/basic-run.json
 node dist/src/cli.js submit examples/basic-run.json --start
 node dist/src/cli.js status <run_id>
@@ -69,14 +72,23 @@ Operator docs:
 ## MCP
 
 ```bash
-node dist/src/mcp.js
+bash scripts/install-local.sh --install-dir "$HOME/bin" --print-config
+npm run mcp:smoke -- --command "$HOME/bin/deepseek-harness-mcp"
 ```
+
+Add the generated MCP snippet at `~/.config/deepseek-harness/mcp-server.json`
+to your MCP client. It contains state/artifact paths only; it does not store a
+DeepSeek API key.
+
+For Codex, append the generated TOML snippet at
+`~/.config/deepseek-harness/codex-mcp-server.toml` to `~/.codex/config.toml`.
 
 Tools:
 
 - `deepseek_harness_doctor`
 - `deepseek_harness_plan`
 - `deepseek_harness_submit`
+- `deepseek_harness_work`
 - `deepseek_harness_status`
 - `deepseek_harness_results`
 - `deepseek_harness_cancel`

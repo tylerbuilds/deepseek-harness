@@ -45,6 +45,12 @@ export interface ScaleRampOptions {
   allowLiveScale?: boolean;
 }
 
+export interface McpConfigOptions {
+  command?: string;
+  stateDir?: string;
+  artifactDir?: string;
+}
+
 export function createStore(context: HarnessContext = {}): HarnessStore {
   return new HarnessStore(context.stateDir ?? defaultStateDir());
 }
@@ -57,6 +63,11 @@ export function doctor(context: HarnessContext = {}): Record<string, unknown> {
       node: process.version,
       state_dir: store.stateDir,
       db_path: store.dbPath,
+      cwd: process.cwd(),
+      cli: {
+        source_entrypoint: path.resolve(process.cwd(), "dist/src/cli.js"),
+        mcp_entrypoint: path.resolve(process.cwd(), "dist/src/mcp.js")
+      },
       deepseek_api_key_present: Boolean(process.env.DEEPSEEK_API_KEY),
       live_calls_default: "disabled",
       live_concurrency_cap: 20,
@@ -66,6 +77,57 @@ export function doctor(context: HarnessContext = {}): Record<string, unknown> {
   } finally {
     store.close();
   }
+}
+
+export function mcpConfig(options: McpConfigOptions = {}): Record<string, unknown> {
+  const mcpEntrypoint = path.resolve(process.cwd(), "dist/src/mcp.js");
+  const command = options.command ? path.resolve(options.command) : process.execPath;
+  const args = options.command ? [] : [mcpEntrypoint];
+  const stateDir = path.resolve(options.stateDir ?? process.env.DEEPSEEK_HARNESS_STATE_DIR ?? path.join(process.cwd(), ".state"));
+  const artifactDir = path.resolve(
+    options.artifactDir ?? process.env.DEEPSEEK_HARNESS_ARTIFACT_DIR ?? path.join(process.cwd(), "artifacts")
+  );
+
+  return {
+    mcpServers: {
+      "deepseek-harness": {
+        command,
+        args,
+        env: {
+          DEEPSEEK_HARNESS_STATE_DIR: stateDir,
+          DEEPSEEK_HARNESS_ARTIFACT_DIR: artifactDir
+        }
+      }
+    }
+  };
+}
+
+export function mcpConfigToml(options: McpConfigOptions = {}): string {
+  const config = mcpConfig(options) as {
+    mcpServers: {
+      "deepseek-harness": {
+        command: string;
+        args: string[];
+        env: Record<string, string>;
+      };
+    };
+  };
+  const server = config.mcpServers["deepseek-harness"];
+
+  return [
+    "[mcp_servers.deepseek-harness]",
+    `args = [${server.args.map(tomlString).join(", ")}]`,
+    `command = ${tomlString(server.command)}`,
+    "",
+    "[mcp_servers.deepseek-harness.env]",
+    `DEEPSEEK_HARNESS_STATE_DIR = ${tomlString(server.env.DEEPSEEK_HARNESS_STATE_DIR)}`,
+    `DEEPSEEK_HARNESS_ARTIFACT_DIR = ${tomlString(server.env.DEEPSEEK_HARNESS_ARTIFACT_DIR)}`,
+    ""
+  ].join("\n");
+}
+
+function tomlString(value: string): string {
+  return JSON.stringify(value);
 }
 
 export function planManifest(input: unknown, options: { allowLive?: boolean } = {}): Record<string, unknown> {
