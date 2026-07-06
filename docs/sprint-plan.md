@@ -14,6 +14,9 @@
 | DSH-07 | Live micro-smoke | Done | explicit approval, tiny non-sensitive batch, bounded cost |
 | DSH-08 | Scale ramp | Done | measured 5/10/20 concurrency reports, local and live |
 | DSH-09 | Closeout | Done locally | proof pack, operator guide, final green checks |
+| DSH-10 | Borrowed-patterns design | Proposed PR | GitHub pattern survey and Rust split decision |
+| DSH-11 | Rust worker core | Proposed PR | fake-transport Rust worker runs existing manifest shape |
+| DSH-12 | Adaptive throughput | Proposed PR | retry/backoff and adaptive concurrency proof |
 
 ## Non-Negotiables
 
@@ -63,3 +66,15 @@ Closeout requires:
 
 Push or PR handling depends on the configured git remote. The harness runtime
 itself still has no GitHub-write authority.
+
+## DSH-10 Borrowed-Patterns Rule
+
+Do not invent orchestration patterns where mature projects already show the
+shape. Borrow selectively, keep the local safety contract, and land changes via
+small PRs:
+
+- use current TypeScript MCP as the stable control surface until a Rust MCP
+  migration has its own proof;
+- introduce Rust first as a worker binary, not a whole-repo rewrite;
+- keep manifests, artifacts and review packets compatible across languages;
+- keep DeepSeek live calls approval-gated and disabled by default.
