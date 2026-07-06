@@ -45,6 +45,7 @@ Live scale ramps additionally require `--allow-live-scale`.
 npm install
 npm run build
 npm test
+npm run test:e2e
 cargo test
 bash scripts/install-local.sh --install-dir "$HOME/bin" --print-config
 

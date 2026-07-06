@@ -19,6 +19,7 @@ secret manager.
 npm install
 npm run typecheck
 npm test
+npm run test:e2e
 node dist/src/cli.js doctor
 node dist/src/cli.js plan examples/basic-run.json
 node dist/src/cli.js agent-canary --output artifacts/agent-canary.json

@@ -16,7 +16,8 @@ Status: implemented locally on branch `codex/dsh-batch-1-8`.
 ## Proof
 
 - `npm run typecheck`: pass.
-- `npm test`: pass, 17/17 tests.
+- `npm run test:e2e`: pass, 2/2 process-boundary tests.
+- `npm test`: pass, 19/19 tests.
 - `npm run mcp:smoke`: pass, 18 MCP tools discovered.
 - `node dist/src/cli.js privacy-check examples/live-deepseek-blocked.json`: pass, privacy safe and live gates reported.
 - `node dist/src/cli.js agent-canary --output artifacts/proof-agent-canary.json`: pass, 3/3 fake items completed.
