@@ -2,7 +2,18 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { cancelRun, doctor, exportReviewPacket, getResults, getStatus, planManifest, processRun, submitManifest } from "./runner.js";
+import {
+  cancelRun,
+  doctor,
+  exportHarnessState,
+  exportReviewPacket,
+  getResults,
+  getStatus,
+  harnessState,
+  planManifest,
+  processRun,
+  submitManifest
+} from "./runner.js";
 import { toErrorPayload } from "./errors.js";
 
 const server = new McpServer({
@@ -126,6 +137,20 @@ server.registerTool(
     }
   },
   async ({ run_id }) => wrap(() => exportReviewPacket(run_id))
+);
+
+server.registerTool(
+  "deepseek_harness_state",
+  {
+    title: "DeepSeek Harness State",
+    description: "Return or export a read-model snapshot. Direct Command Centre state writes are blocked.",
+    inputSchema: {
+      output: z.string().optional(),
+      limit: z.number().int().positive().optional()
+    }
+  },
+  async ({ output, limit }) =>
+    wrap(() => (output ? exportHarnessState({}, { output, limit }) : harnessState({}, { limit })))
 );
 
 const transport = new StdioServerTransport();

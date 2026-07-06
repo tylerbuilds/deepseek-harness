@@ -1,6 +1,17 @@
 #!/usr/bin/env node
 import fs from "node:fs";
-import { cancelRun, doctor, exportReviewPacket, getResults, getStatus, planManifest, processRun, submitManifest } from "./runner.js";
+import {
+  cancelRun,
+  doctor,
+  exportHarnessState,
+  exportReviewPacket,
+  getResults,
+  getStatus,
+  harnessState,
+  planManifest,
+  processRun,
+  submitManifest
+} from "./runner.js";
 import { toErrorPayload } from "./errors.js";
 
 interface ParsedArgs {
@@ -41,6 +52,11 @@ async function main(): Promise<void> {
       break;
     case "export-review-packet":
       result = exportReviewPacket(requiredArg(args, 0, "run_id"));
+      break;
+    case "state":
+      result = args.flags.output
+        ? exportHarnessState({}, { output: String(args.flags.output), limit: optionalNumber(args.flags.limit) })
+        : harnessState({}, { limit: optionalNumber(args.flags.limit) });
       break;
     default:
       throw new Error(`Unknown command: ${args.command || "(missing)"}`);
@@ -91,6 +107,17 @@ function requiredFlagOrArg(args: ParsedArgs, flag: string, index: number): strin
     return fromFlag;
   }
   return requiredArg(args, index, flag);
+}
+
+function optionalNumber(value: string | boolean | undefined): number | undefined {
+  if (value === undefined || typeof value === "boolean") {
+    return undefined;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Expected number, got ${value}`);
+  }
+  return parsed;
 }
 
 main().catch((error) => {

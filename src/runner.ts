@@ -209,6 +209,51 @@ export function exportReviewPacket(runId: string, context: HarnessContext = {}):
   }
 }
 
+export function harnessState(context: HarnessContext = {}, options: { limit?: number } = {}): Record<string, unknown> {
+  const store = createStore(context);
+  try {
+    const runs = store.listRuns(options.limit ?? 20).map((run) => store.runSummaryRecord(run));
+    return {
+      schema_version: "deepseek-harness.state.v1",
+      generated_at: new Date().toISOString(),
+      authority: {
+        canonical_state_write: false,
+        command_centre_state_write: false,
+        local_workspace_apply: false,
+        external_side_effects: false,
+        live_deepseek_calls_default: "disabled"
+      },
+      environment: {
+        node: process.version,
+        state_dir: store.stateDir,
+        db_path: store.dbPath,
+        deepseek_api_key_present: Boolean(process.env.DEEPSEEK_API_KEY)
+      },
+      runs
+    };
+  } finally {
+    store.close();
+  }
+}
+
+export function exportHarnessState(
+  context: HarnessContext = {},
+  options: { output?: string; limit?: number } = {}
+): Record<string, unknown> {
+  const output = path.resolve(options.output ?? path.join(context.artifactRoot ?? defaultArtifactRoot(), "deepseek-harness-state.json"));
+  if (isCommandCentreStatePath(output)) {
+    throw new HarnessError(
+      "command_centre_state_write_blocked",
+      "Harness must not write Command Centre/_state directly; route this through Agent OS"
+    );
+  }
+
+  const state = harnessState(context, { limit: options.limit });
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, JSON.stringify(state, null, 2));
+  return { ok: true, path: output, state };
+}
+
 async function processItem(
   store: HarnessStore,
   transport: CompletionTransport,
@@ -262,4 +307,9 @@ function writeResultArtifacts(store: HarnessStore, runId: string): void {
     path.join(run.artifact_dir, "results.jsonl"),
     items.map((item) => JSON.stringify(item)).join("\n") + "\n"
   );
+}
+
+function isCommandCentreStatePath(filePath: string): boolean {
+  const normalised = filePath.split(path.sep).join("/");
+  return normalised.includes("/Documents/Obsidian/Command Centre/_state/");
 }

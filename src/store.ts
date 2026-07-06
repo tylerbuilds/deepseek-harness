@@ -129,6 +129,22 @@ export class HarnessStore {
     };
   }
 
+  listRuns(limit = 20): RunRecord[] {
+    const rows = this.db
+      .prepare("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?")
+      .all(limit) as Record<string, unknown>[];
+
+    return rows.map((row) => ({
+      run_id: String(row.run_id),
+      status: row.status as RunStatus,
+      manifest: JSON.parse(String(row.manifest_json)) as RunManifest,
+      artifact_dir: String(row.artifact_dir),
+      created_at: String(row.created_at),
+      updated_at: String(row.updated_at),
+      error: row.error === null ? null : String(row.error)
+    }));
+  }
+
   listItems(runId: string): ItemRecord[] {
     const rows = this.db
       .prepare("SELECT * FROM items WHERE run_id = ? ORDER BY item_id")
@@ -196,6 +212,27 @@ export class HarnessStore {
   summary(runId: string): Record<string, unknown> {
     const run = this.getRun(runId);
     const items = this.listItems(runId);
+    const counts = items.reduce<Record<string, number>>((acc, item) => {
+      acc[item.status] = (acc[item.status] ?? 0) + 1;
+      return acc;
+    }, {});
+    return {
+      run_id: run.run_id,
+      status: run.status,
+      project: run.manifest.project,
+      transport: run.manifest.transport,
+      model: run.manifest.model,
+      artifact_dir: run.artifact_dir,
+      created_at: run.created_at,
+      updated_at: run.updated_at,
+      error: run.error,
+      item_count: items.length,
+      counts
+    };
+  }
+
+  runSummaryRecord(run: RunRecord): Record<string, unknown> {
+    const items = this.listItems(run.run_id);
     const counts = items.reduce<Record<string, number>>((acc, item) => {
       acc[item.status] = (acc[item.status] ?? 0) + 1;
       return acc;

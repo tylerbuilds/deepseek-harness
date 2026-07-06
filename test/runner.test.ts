@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { exportReviewPacket, getResults, submitManifest } from "../src/runner.js";
+import { exportHarnessState, exportReviewPacket, getResults, submitManifest } from "../src/runner.js";
 
 test("submits and runs fake batch with SQLite state", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "deepseek-harness-"));
@@ -37,4 +37,24 @@ test("submits and runs fake batch with SQLite state", async () => {
 
   const packet = exportReviewPacket(result.run_id, { stateDir: path.join(root, ".state") }) as { path: string };
   assert.equal(fs.existsSync(packet.path), true);
+
+  const statePath = path.join(root, "artifacts", "state.json");
+  const state = exportHarnessState(
+    { stateDir: path.join(root, ".state"), artifactRoot: path.join(root, "artifacts") },
+    { output: statePath }
+  ) as { path: string; state: { runs: unknown[] } };
+  assert.equal(state.path, statePath);
+  assert.equal(state.state.runs.length, 1);
+});
+
+test("blocks direct Command Centre state writes", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "deepseek-harness-"));
+  assert.throws(
+    () =>
+      exportHarnessState(
+        { stateDir: path.join(root, ".state") },
+        { output: "/Users/tyler/Documents/Obsidian/Command Centre/_state/deepseek-harness.json" }
+      ),
+    /Command Centre\/_state/
+  );
 });
