@@ -22,9 +22,24 @@ npm test
 node dist/src/cli.js doctor
 node dist/src/cli.js plan examples/basic-run.json
 node dist/src/cli.js scale-ramp examples/basic-run.json --concurrency 5,10,20 --items 40 --output artifacts/scale-ramp-local.json
+cargo run -p deepseek-harness-worker -- --manifest examples/basic-run.json --transport fake --concurrency 4 --output artifacts/rust-worker-basic-run.json
 ```
 
 The default example uses `transport: "fake"` and does not call DeepSeek.
+
+## Rust Worker
+
+The Rust worker is an execution-core experiment behind the TypeScript CLI/MCP
+surface. It currently supports fake transport only.
+
+```bash
+cargo test
+cargo run -p deepseek-harness-worker -- --manifest examples/basic-run.json --transport fake --concurrency 4
+```
+
+The worker report schema is `deepseek-harness.worker-report.v1`. It does not
+call DeepSeek, write SQLite, write Agent OS state, apply repo changes, deploy or
+send messages.
 
 ## Live Micro-Smoke
 
