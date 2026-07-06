@@ -1,23 +1,29 @@
-service:
-  id: deepseek-harness
-  name: DeepSeek Harness
-  service_class: external_batch_harness
-  deploy_class: local_only
-  secret_policy: no_raw_secrets
-  backup_posture: git_remote_enough
-
-lanes:
+id: deepseek-harness
+repo_path: /Users/tyler/Code/control-plane/deepseek-harness
+owner: CommandCentreOps
+service_class: engineering_harness
+deploy_class: local_only
+release_target: local_tool_or_cli
+secret_policy: no_raw_secrets
+proof_commands:
+  quick:
+    - npm run typecheck
+    - npm test
+  full:
+    - npm run typecheck
+    - npm test
+docs:
+  primary:
+    - README.md
+    - docs/sprint-plan.md
+metrics_sources:
+  - .state/deepseek-harness.sqlite
+agent_lanes:
   read_only: true
   draft_only: true
   sandbox_prepare: true
   local_workspace_apply: false
-  external_side_effects: false
-
-proof:
-  quick:
-    - npm run typecheck
-    - npm test
-
+  external_side_effects: manual_only
 guardrails:
   canonical_state_write: false
   command_centre_state_write: false
