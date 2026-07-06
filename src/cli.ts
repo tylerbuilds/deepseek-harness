@@ -11,6 +11,8 @@ import {
   getResults,
   getStatus,
   harnessState,
+  mcpConfig,
+  mcpConfigToml,
   planManifest,
   processRun,
   scaleRamp,
@@ -29,9 +31,27 @@ async function main(): Promise<void> {
   const allowLive = Boolean(args.flags["allow-live"]);
 
   let result: unknown;
+  let rawOutput: string | undefined;
   switch (args.command) {
     case "doctor":
       result = doctor();
+      break;
+    case "mcp-config":
+      {
+        const options = {
+          command: optionalString(args.flags.command),
+          stateDir: optionalString(args.flags["state-dir"]),
+          artifactDir: optionalString(args.flags["artifact-dir"])
+        };
+        const format = optionalString(args.flags.format) ?? "json";
+        if (format === "json") {
+          result = mcpConfig(options);
+        } else if (format === "codex-toml") {
+          rawOutput = mcpConfigToml(options);
+        } else {
+          throw new Error(`Unknown mcp-config format: ${format}`);
+        }
+      }
       break;
     case "plan":
       result = planManifest(readJson(requiredArg(args, 0, "manifest path")), { allowLive });
@@ -83,7 +103,7 @@ async function main(): Promise<void> {
       throw new Error(`Unknown command: ${args.command || "(missing)"}`);
   }
 
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  process.stdout.write(rawOutput ?? `${JSON.stringify(result, null, 2)}\n`);
 }
 
 function parseArgs(argv: string[]): ParsedArgs {

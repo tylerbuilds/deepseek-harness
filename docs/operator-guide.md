@@ -23,6 +23,8 @@ node dist/src/cli.js doctor
 node dist/src/cli.js plan examples/basic-run.json
 node dist/src/cli.js scale-ramp examples/basic-run.json --concurrency 5,10,20 --items 40 --output artifacts/scale-ramp-local.json
 cargo run -p deepseek-harness-worker -- --manifest examples/basic-run.json --transport fake --concurrency 4 --output artifacts/rust-worker-basic-run.json
+bash scripts/install-local.sh --install-dir "$HOME/bin" --print-config
+npm run mcp:smoke -- --command "$HOME/bin/deepseek-harness-mcp"
 ```
 
 The default example uses `transport: "fake"` and does not call DeepSeek.
@@ -83,11 +85,25 @@ git. Keep them local unless a specific review route asks for them.
 ## MCP
 
 ```bash
-node dist/src/mcp.js
+bash scripts/install-local.sh --install-dir "$HOME/bin" --print-config
+npm run mcp:smoke -- --command "$HOME/bin/deepseek-harness-mcp"
 ```
 
 The MCP server exposes the same service layer as the CLI. Treat MCP output as
 evidence and control-plane input, not as approval or execution authority.
+
+The installer writes:
+
+- `$HOME/bin/deepseek-harness`
+- `$HOME/bin/deepseek-harness-mcp`
+- `$HOME/.config/deepseek-harness/mcp-server.json`
+- `$HOME/.config/deepseek-harness/codex-mcp-server.toml`
+
+The MCP config snippets are safe to paste into client config. They include the
+launcher path and local state/artifact directories only. They deliberately do
+not include `DEEPSEEK_API_KEY`.
+
+For Codex, append `codex-mcp-server.toml` to `~/.codex/config.toml`.
 
 ## Hard Boundaries
 
