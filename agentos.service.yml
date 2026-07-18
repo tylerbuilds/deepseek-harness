@@ -1,6 +1,6 @@
 id: deepseek-harness
-repo_path: /Users/tyler/Code/control-plane/deepseek-harness
-owner: CommandCentreOps
+repo_path: .
+owner: local_operator
 service_class: engineering_harness
 deploy_class: local_only
 release_target: local_tool_or_cli
@@ -19,7 +19,6 @@ docs:
     - docs/operator-guide.md
     - docs/agent-os-integration.md
     - docs/dispatch-integration.md
-    - docs/proof/DSH-09-CLOSEOUT-2026-07-06.md
 metrics_sources:
   - .state/deepseek-harness.sqlite
 agent_lanes:

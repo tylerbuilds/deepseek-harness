@@ -1,0 +1,29 @@
+{
+  "schema_version": "deepseek-harness.corpus.v1",
+  "job_id": "corpus-jsonl-dataset",
+  "project": "jsonl-dataset-example",
+  "workload_type": "dataset_transform",
+  "privacy_lane": "local_only",
+  "artifact_dir": "artifacts/corpus/corpus-jsonl-dataset",
+  "processor": {
+    "type": "copy_text"
+  },
+  "sources": [
+    {
+      "id": "dataset",
+      "type": "dataset"
+    }
+  ],
+  "shards": [
+    {
+      "id": "rows-00000001-00000002",
+      "source_id": "dataset",
+      "inline_text": "{\"id\":1,\"text\":\"alpha\"}\n{\"id\":2,\"text\":\"beta\"}\n",
+      "bounds": {
+        "row_start": 1,
+        "row_end": 2,
+        "row_count": 2
+      }
+    }
+  ]
+}

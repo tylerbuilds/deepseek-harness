@@ -2,14 +2,13 @@
 
 ## Supported Versions
 
-This project is pre-release. Security fixes target the default branch until the
-first tagged release exists.
+Security fixes target the latest `0.0.x` release and the default branch.
 
 ## Reporting A Vulnerability
 
-Please open a private GitHub security advisory for this repository if available.
-If that is not available, contact the maintainer through the GitHub profile for
-`tylerbuilds`.
+Please use the repository's private vulnerability-reporting route. If it is
+unavailable, open a minimal public issue asking for a private contact channel;
+do not include vulnerability details in that issue.
 
 Do not include raw credentials, API keys, tokens, private prompts, customer data
 or live provider responses in public issues.

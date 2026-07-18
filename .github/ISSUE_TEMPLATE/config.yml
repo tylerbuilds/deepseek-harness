@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/tylerbuilds/deepseek-harness/security/advisories/new
+    about: Use a private reporting route for security concerns. Do not disclose secrets or exploit details publicly.

@@ -5,8 +5,6 @@ sidecar, not an approval system and not an Agent OS state writer.
 
 ## Status
 
-Core sprint status: `DSH-00` to `DSH-09` complete locally.
-
 - validates explicit run manifests;
 - stores runs, items and events in local SQLite;
 - supports fake and DeepSeek dry-run transports;
@@ -16,10 +14,22 @@ Core sprint status: `DSH-00` to `DSH-09` complete locally.
 - includes a gated scale-ramp command for measured concurrency tests;
 - includes local agent canary, workload benchmark, privacy check, cost ledger,
   failure canary and model-comparison planning tools.
+- includes a local corpus runner surface for manifest-backed shard ledgers,
+  books, local OCR, translation memory/QA, JSONL datasets, long-form authoring,
+  ffprobe media catalogues, preflight planning, supervision, reconciliation and
+  cancellation.
 
-The live proof on 2026-07-06 completed a non-sensitive DeepSeek V4 Flash
-scale ramp at 5, 10 and 20 concurrency. All three 40-item runs completed;
-the fastest measured leg was concurrency 20 at 15.86 items/second.
+## Start here
+
+New to the harness? Follow the [user guide](docs/user-guide.md) for a safe fake
+run, local CLI installation, MCP setup and the live-run approval boundary.
+Operators should also read the [operator guide](docs/operator-guide.md).
+
+The `v0.0.1` release is an MIT-licensed source release. It is intentionally not
+published to npm: `package.json` remains private, and `npm run pack:check` is a
+local archive-boundary check rather than a publication step. Clone the
+repository and use the local installer when you want the CLI or MCP launchers
+on your machine.
 
 ## Safety Contract
 
@@ -72,16 +82,49 @@ node dist/src/cli.js workload-benchmark --workload extraction --items 12 --concu
 node dist/src/cli.js failure-canary --output artifacts/failure-canary.json
 node dist/src/cli.js compare-models examples/model-comparison-base.json --output artifacts/model-comparison-plan.json
 node dist/src/cli.js scale-ramp examples/basic-run.json --concurrency 5,10,20 --items 40 --output artifacts/scale-ramp-local.json
-cargo run -p deepseek-harness-worker -- --manifest examples/basic-run.json --transport fake --concurrency 4 --output artifacts/rust-worker-basic-run.json
+node dist/src/cli.js corpus ingest-text README.md --project readme-corpus --chunk-chars 30000 --overlap-chars 1000
+node dist/src/cli.js corpus ingest-jsonl records.jsonl --project dataset-corpus --records-per-shard 1000
+node dist/src/cli.js corpus ingest-book book.txt --project whole-book --chunk-chars 12000 --overlap-chars 1000
+node dist/src/cli.js corpus ingest-ocr scans.pdf --project scans --engine auto --language en-GB
+node dist/src/cli.js corpus ingest-translation source.txt --project source-fr --source-lang en --target-lang fr --glossary examples/translation-glossary.json --translation-memory translation-memory/source-fr.sqlite
+node dist/src/cli.js corpus ingest-longform examples/longform-outline.json --project longform --minimum-words-per-section 800
+node dist/src/cli.js corpus ingest-media media --project media-catalogue --recursive --max-files 5000
+node dist/src/cli.js corpus plan examples/corpus-basic.json
+node dist/src/cli.js corpus approval-packet examples/corpus-deepseek-fake.json
+node dist/src/cli.js corpus start examples/corpus-basic.json
+node dist/src/cli.js corpus start examples/corpus-basic.json --enqueue-only
+node dist/src/cli.js corpus start examples/corpus-deepseek-fake.json
+node dist/src/cli.js corpus supervise --once --max-jobs-per-cycle 4 --max-iterations-per-job 10
+node dist/src/cli.js corpus status <job_id> --artifact-dir artifacts/corpus/<job_id>
+node dist/src/cli.js corpus resume <job_id> --artifact-dir artifacts/corpus/<job_id>
+node dist/src/cli.js corpus work <job_id> --artifact-dir artifacts/corpus/<job_id> --max-iterations 100 --interval-ms 0
+node dist/src/cli.js corpus validate <job_id> --artifact-dir artifacts/corpus/<job_id>
+node dist/src/cli.js corpus reconcile <job_id> --artifact-dir artifacts/corpus/<job_id>
+node dist/src/cli.js corpus cancel <job_id> --artifact-dir artifacts/corpus/<job_id>
+node dist/src/cli.js corpus translation-review-packet <job_id> --artifact-dir artifacts/corpus/<job_id>
+node dist/src/cli.js corpus commit-translation-memory <job_id> --artifact-dir artifacts/corpus/<job_id> --review-receipt /secure/path/review-receipt.json
+cargo run -p deepseek-harness-worker -- --manifest examples/basic-run.json --transport fake --concurrency 4 --output rust-worker-basic-run.json
 ```
 
 The default example uses the fake transport and performs no network calls.
+The corpus runner supports deterministic text and JSONL ingest, chapter-aware
+book analysis, real local image/PDF OCR, reviewed exact-match translation
+memory, translation and long-form QA, curated ffprobe media catalogues,
+preflight planning, crash-safe locks and bounded supervision. DeepSeek batch
+processing still uses the existing fake, dry-run and live-gated transports.
+JSONL ingest is streaming and file-backed; reconciliation streams without
+materialising the corpus. Local/fake/dry-run workers churn bounded batches.
+Live corpus calls require the normal signed receipt, API key, egress and cost
+gates, must fit one signed batch, and cannot be queued or run by the persistent
+supervisor.
+Media transcodes, publishing, deploys and canonical Agent OS writes remain
+outside the runner.
 
 Operator docs:
 
 - `docs/operator-guide.md`
+- `docs/corpus-heavy-workloads.md`
 - `docs/sprint-plan.md`
-- `docs/proof/DSH-09-CLOSEOUT-2026-07-06.md`
 
 ## MCP
 
@@ -117,3 +160,22 @@ Tools:
 - `deepseek_harness_failure_canary`
 - `deepseek_harness_compare_models`
 - `deepseek_harness_scale_ramp`
+- `deepseek_harness_corpus_ingest_text`
+- `deepseek_harness_corpus_ingest_jsonl`
+- `deepseek_harness_corpus_ingest_ocr`
+- `deepseek_harness_corpus_ingest_media`
+- `deepseek_harness_corpus_ingest_translation`
+- `deepseek_harness_corpus_ingest_book`
+- `deepseek_harness_corpus_ingest_longform`
+- `deepseek_harness_corpus_plan`
+- `deepseek_harness_corpus_approval_packet`
+- `deepseek_harness_corpus_start`
+- `deepseek_harness_corpus_status`
+- `deepseek_harness_corpus_resume`
+- `deepseek_harness_corpus_work`
+- `deepseek_harness_corpus_validate`
+- `deepseek_harness_corpus_reconcile`
+- `deepseek_harness_corpus_cancel`
+- `deepseek_harness_corpus_translation_review_packet`
+- `deepseek_harness_corpus_commit_translation_memory`
+- `deepseek_harness_corpus_supervise`

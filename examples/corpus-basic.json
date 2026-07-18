@@ -1,0 +1,32 @@
+{
+  "schema_version": "deepseek-harness.corpus.v1",
+  "job_id": "corpus-basic",
+  "project": "corpus-basic",
+  "workload_type": "book_reading",
+  "privacy_lane": "local_only",
+  "artifact_dir": "artifacts/corpus/corpus-basic",
+  "sources": [
+    {
+      "id": "sample-book",
+      "type": "text"
+    }
+  ],
+  "shards": [
+    {
+      "id": "chapter-1",
+      "source_id": "sample-book",
+      "inline_text": "Chapter one sample text.",
+      "bounds": {
+        "chapter": 1
+      }
+    },
+    {
+      "id": "chapter-2",
+      "source_id": "sample-book",
+      "inline_text": "Chapter two sample text.",
+      "bounds": {
+        "chapter": 2
+      }
+    }
+  ]
+}

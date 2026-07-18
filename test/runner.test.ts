@@ -56,16 +56,69 @@ test("submits and runs fake batch with SQLite state", async () => {
   assert.equal(state.state.runs.length, 1);
 });
 
-test("blocks direct Command Centre state writes", () => {
+test("blocks output paths outside the configured artifact root", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "deepseek-harness-"));
   assert.throws(
     () =>
       exportHarnessState(
-        { stateDir: path.join(root, ".state") },
-        { output: "/Users/tyler/Documents/Obsidian/Command Centre/_state/deepseek-harness.json" }
+        { stateDir: path.join(root, ".state"), artifactRoot: path.join(root, "artifacts") },
+        { output: path.join(root, "outside", "deepseek-harness.json") }
       ),
-    /Command Centre\/_state/
+    /configured artifact root/
   );
+});
+
+test("blocks an artifact-root symlink escape", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "deepseek-harness-"));
+  const artifactRoot = path.join(root, "artifacts");
+  const outside = path.join(root, "outside");
+  fs.mkdirSync(artifactRoot);
+  fs.mkdirSync(outside);
+  fs.symlinkSync(outside, path.join(artifactRoot, "escape"));
+
+  assert.throws(
+    () => exportHarnessState(
+      { stateDir: path.join(root, ".state"), artifactRoot },
+      { output: path.join(artifactRoot, "escape", "state.json") }
+    ),
+    /resolves outside the configured artifact root/
+  );
+});
+
+test("replaces a final output symlink without following its target", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "deepseek-harness-"));
+  const artifactRoot = path.join(root, "artifacts");
+  const target = path.join(artifactRoot, "target.json");
+  const output = path.join(artifactRoot, "linked.json");
+  fs.mkdirSync(artifactRoot);
+  fs.writeFileSync(target, "existing target");
+  fs.symlinkSync(target, output);
+
+  exportHarnessState(
+    { stateDir: path.join(root, ".state"), artifactRoot },
+    { output }
+  );
+
+  assert.equal(fs.readFileSync(target, "utf8"), "existing target");
+  assert.equal(fs.lstatSync(output).isSymbolicLink(), false);
+});
+
+test("replaces an in-root hard link without mutating its outside inode", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "deepseek-harness-"));
+  const artifactRoot = path.join(root, "artifacts");
+  const outside = path.join(root, "outside.json");
+  const output = path.join(artifactRoot, "state.json");
+  fs.mkdirSync(artifactRoot);
+  fs.writeFileSync(outside, "outside content");
+  fs.linkSync(outside, output);
+
+  exportHarnessState(
+    { stateDir: path.join(root, ".state"), artifactRoot },
+    { output }
+  );
+
+  assert.equal(fs.readFileSync(outside, "utf8"), "outside content");
+  assert.notEqual(fs.readFileSync(output, "utf8"), "outside content");
 });
 
 test("builds no-secret MCP config snippets", () => {
@@ -122,7 +175,7 @@ test("exports approval packet artefact", () => {
       external_side_effects: false,
       items: [{ id: "a", prompt: "hello" }]
     },
-    {},
+    { artifactRoot: root },
     { output }
   ) as { path: string };
 
@@ -148,7 +201,7 @@ test("runs local scale ramp and writes report", async () => {
     },
     {
       stateDir: path.join(root, ".state"),
-      artifactRoot: path.join(root, "artifacts")
+      artifactRoot: root
     },
     {
       concurrencies: [2, 4],

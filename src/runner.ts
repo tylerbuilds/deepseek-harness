@@ -4,7 +4,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { observedUsageCost } from "./budget.js";
 import { buildCostLedger } from "./cost.js";
 import { HarnessError } from "./errors.js";
-import { defaultArtifactRoot, defaultStateDir } from "./paths.js";
+import {
+  defaultArtifactRoot,
+  defaultCorpusInputRoot,
+  defaultStateDir,
+  resolveArtifactOutputPath,
+  writeArtifactOutput
+} from "./paths.js";
 import { classifyManifestPrivacy } from "./privacy.js";
 import { HarnessStore, type ItemRecord } from "./store.js";
 import {
@@ -76,6 +82,7 @@ export interface McpConfigOptions {
   command?: string;
   stateDir?: string;
   artifactDir?: string;
+  inputRoot?: string;
 }
 
 export function createStore(context: HarnessContext = {}): HarnessStore {
@@ -91,6 +98,7 @@ export function doctor(context: HarnessContext = {}): Record<string, unknown> {
       state_dir: store.stateDir,
       db_path: store.dbPath,
       cwd: process.cwd(),
+      corpus_input_root: defaultCorpusInputRoot(),
       cli: {
         source_entrypoint: path.resolve(process.cwd(), "dist/src/cli.js"),
         mcp_entrypoint: path.resolve(process.cwd(), "dist/src/mcp.js")
@@ -115,6 +123,7 @@ export function mcpConfig(options: McpConfigOptions = {}): Record<string, unknow
   const artifactDir = path.resolve(
     options.artifactDir ?? process.env.DEEPSEEK_HARNESS_ARTIFACT_DIR ?? path.join(process.cwd(), "artifacts")
   );
+  const inputRoot = path.resolve(options.inputRoot ?? defaultCorpusInputRoot());
 
   return {
     mcpServers: {
@@ -123,7 +132,8 @@ export function mcpConfig(options: McpConfigOptions = {}): Record<string, unknow
         args,
         env: {
           DEEPSEEK_HARNESS_STATE_DIR: stateDir,
-          DEEPSEEK_HARNESS_ARTIFACT_DIR: artifactDir
+          DEEPSEEK_HARNESS_ARTIFACT_DIR: artifactDir,
+          DEEPSEEK_HARNESS_INPUT_ROOT: inputRoot
         }
       }
     }
@@ -150,6 +160,7 @@ export function mcpConfigToml(options: McpConfigOptions = {}): string {
     "[mcp_servers.deepseek-harness.env]",
     `DEEPSEEK_HARNESS_STATE_DIR = ${tomlString(server.env.DEEPSEEK_HARNESS_STATE_DIR)}`,
     `DEEPSEEK_HARNESS_ARTIFACT_DIR = ${tomlString(server.env.DEEPSEEK_HARNESS_ARTIFACT_DIR)}`,
+    `DEEPSEEK_HARNESS_INPUT_ROOT = ${tomlString(server.env.DEEPSEEK_HARNESS_INPUT_ROOT)}`,
     ""
   ].join("\n");
 }
@@ -187,10 +198,10 @@ export async function submitManifest(
   try {
     const runId = manifest.run_id ?? randomUUID();
     const artifactRoot = context.artifactRoot ?? defaultArtifactRoot();
-    const artifactDir = path.resolve(manifest.artifact_dir ?? path.join(artifactRoot, runId));
+    const artifactDir = resolveArtifactOutputPath(artifactRoot, resolveRunArtifactDirectory(artifactRoot, manifest.artifact_dir, runId));
     const manifestWithRunId: RunManifest = { ...manifest, run_id: runId, artifact_dir: artifactDir };
     store.createRun(runId, manifestWithRunId, artifactDir);
-    fs.writeFileSync(path.join(artifactDir, "manifest.json"), JSON.stringify(redactReceiptForArtifact(manifestWithRunId), null, 2));
+    writeArtifactOutput(artifactDir, path.join(artifactDir, "manifest.json"), JSON.stringify(redactReceiptForArtifact(manifestWithRunId), null, 2));
 
     if (options.start) {
       await processRun(runId, context, { allowLive: options.allowLive });
@@ -342,10 +353,9 @@ export function exportReviewPacket(runId: string, context: HarnessContext = {}):
       cost_ledger: costLedger,
       items
     };
-    const packetPath = path.join(run.artifact_dir, "review-packet.json");
-    fs.mkdirSync(run.artifact_dir, { recursive: true });
-    fs.writeFileSync(packetPath, JSON.stringify(packet, null, 2));
-    return { ok: true, path: packetPath, packet };
+    const packetPath = resolveArtifactOutputPath(run.artifact_dir, path.join(run.artifact_dir, "review-packet.json"));
+    const writtenPacketPath = writeArtifactOutput(run.artifact_dir, packetPath, JSON.stringify(packet, null, 2));
+    return { ok: true, path: writtenPacketPath, packet };
   } finally {
     store.close();
   }
@@ -382,18 +392,15 @@ export function exportHarnessState(
   context: HarnessContext = {},
   options: { output?: string; limit?: number } = {}
 ): Record<string, unknown> {
-  const output = path.resolve(options.output ?? path.join(context.artifactRoot ?? defaultArtifactRoot(), "deepseek-harness-state.json"));
-  if (isCommandCentreStatePath(output)) {
-    throw new HarnessError(
-      "command_centre_state_write_blocked",
-      "Harness must not write Command Centre/_state directly; route this through Agent OS"
-    );
-  }
+  const artifactRoot = context.artifactRoot ?? defaultArtifactRoot();
+  const output = resolveArtifactOutputPath(
+    artifactRoot,
+    options.output ?? path.join(artifactRoot, "deepseek-harness-state.json")
+  );
 
   const state = harnessState(context, { limit: options.limit });
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, JSON.stringify(state, null, 2));
-  return { ok: true, path: output, state };
+  const writtenOutput = writeArtifactOutput(artifactRoot, output, JSON.stringify(state, null, 2));
+  return { ok: true, path: writtenOutput, state };
 }
 
 export function dispatchProposal(input: unknown, options: { allowLive?: boolean } = {}): Record<string, unknown> {
@@ -519,19 +526,14 @@ export function exportApprovalPacket(
 ): Record<string, unknown> {
   const packet = approvalPacket(input);
   const project = typeof packet.project === "string" ? packet.project : "deepseek-harness";
-  const output = path.resolve(
-    options.output ?? path.join(context.artifactRoot ?? defaultArtifactRoot(), `${project}-approval-packet.json`)
+  const artifactRoot = context.artifactRoot ?? defaultArtifactRoot();
+  const output = resolveArtifactOutputPath(
+    artifactRoot,
+    options.output ?? path.join(artifactRoot, `${project}-approval-packet.json`)
   );
-  if (isCommandCentreStatePath(output)) {
-    throw new HarnessError(
-      "command_centre_state_write_blocked",
-      "Harness must not write Command Centre/_state directly; route this through Agent OS"
-    );
-  }
 
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, JSON.stringify(packet, null, 2));
-  return { ok: true, path: output, packet };
+  const writtenOutput = writeArtifactOutput(artifactRoot, output, JSON.stringify(packet, null, 2));
+  return { ok: true, path: writtenOutput, packet };
 }
 
 export function privacyCheck(input: unknown): Record<string, unknown> {
@@ -561,17 +563,13 @@ export function exportCostLedger(
   try {
     const run = store.getRun(runId);
     const ledger = buildCostLedger(run, store.listItems(runId), store.budgetStatus(runId));
-    const output = path.resolve(options.output ?? path.join(run.artifact_dir, "cost-ledger.json"));
-    if (isCommandCentreStatePath(output)) {
-      throw new HarnessError(
-        "command_centre_state_write_blocked",
-        "Harness must not write Command Centre/_state directly; route this through Agent OS"
-      );
-    }
+    const output = resolveArtifactOutputPath(
+      run.artifact_dir,
+      options.output ?? path.join(run.artifact_dir, "cost-ledger.json")
+    );
 
-    fs.mkdirSync(path.dirname(output), { recursive: true });
-    fs.writeFileSync(output, JSON.stringify(ledger, null, 2));
-    return { ok: true, path: output, ledger };
+    const writtenOutput = writeArtifactOutput(run.artifact_dir, output, JSON.stringify(ledger, null, 2));
+    return { ok: true, path: writtenOutput, ledger };
   } finally {
     store.close();
   }
@@ -600,7 +598,7 @@ export async function agentCanary(
     authority: localMacroAuthority()
   };
 
-  const output = options.output ? writeMacroReport(options.output, report) : null;
+  const output = options.output ? writeMacroReport(options.output, report, context.artifactRoot ?? defaultArtifactRoot()) : null;
   return { ok: report.status === "ok", path: output, report };
 }
 
@@ -637,7 +635,7 @@ export async function workloadBenchmark(
     authority: localMacroAuthority()
   };
 
-  const output = options.output ? writeMacroReport(options.output, report) : null;
+  const output = options.output ? writeMacroReport(options.output, report, context.artifactRoot ?? defaultArtifactRoot()) : null;
   return { ok: report.status === "ok", path: output, report };
 }
 
@@ -664,7 +662,7 @@ export async function failureCanary(
     authority: localMacroAuthority()
   };
 
-  const output = options.output ? writeMacroReport(options.output, report) : null;
+  const output = options.output ? writeMacroReport(options.output, report, context.artifactRoot ?? defaultArtifactRoot()) : null;
   return { ok: expectedFailureObserved, path: output, report };
 }
 
@@ -706,7 +704,7 @@ export function modelComparisonPlan(
     authority: localMacroAuthority()
   };
 
-  const output = options.output ? writeMacroReport(options.output, report) : null;
+  const output = options.output ? writeMacroReport(options.output, report, defaultArtifactRoot()) : null;
   return { ok: candidates.every((candidate) => candidate.plan.ok), path: output, report };
 }
 
@@ -727,15 +725,11 @@ export async function scaleRamp(
     );
   }
 
-  const output = path.resolve(
-    options.output ?? path.join(context.artifactRoot ?? defaultArtifactRoot(), `scale-ramp-${Date.now()}.json`)
+  const artifactRoot = context.artifactRoot ?? defaultArtifactRoot();
+  const output = resolveArtifactOutputPath(
+    artifactRoot,
+    options.output ?? path.join(artifactRoot, `scale-ramp-${Date.now()}.json`)
   );
-  if (isCommandCentreStatePath(output)) {
-    throw new HarnessError(
-      "command_centre_state_write_blocked",
-      "Harness must not write Command Centre/_state directly; route this through Agent OS"
-    );
-  }
 
   const runs = [];
   for (const concurrency of concurrencies) {
@@ -797,9 +791,8 @@ export async function scaleRamp(
     runs
   };
 
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, JSON.stringify(report, null, 2));
-  return { ok: true, path: output, report };
+  const writtenOutput = writeArtifactOutput(artifactRoot, output, JSON.stringify(report, null, 2));
+  return { ok: true, path: writtenOutput, report };
 }
 
 async function processItem(
@@ -855,13 +848,9 @@ function writeResultArtifacts(store: HarnessStore, runId: string): void {
   const run = store.getRun(runId);
   const items = store.listItems(runId);
   const costLedger = buildCostLedger(run, items, store.budgetStatus(runId));
-  fs.mkdirSync(run.artifact_dir, { recursive: true });
-  fs.writeFileSync(path.join(run.artifact_dir, "summary.json"), JSON.stringify(store.summary(runId), null, 2));
-  fs.writeFileSync(path.join(run.artifact_dir, "cost-ledger.json"), JSON.stringify(costLedger, null, 2));
-  fs.writeFileSync(
-    path.join(run.artifact_dir, "results.jsonl"),
-    items.map((item) => JSON.stringify(item)).join("\n") + "\n"
-  );
+  writeArtifactOutput(run.artifact_dir, path.join(run.artifact_dir, "summary.json"), JSON.stringify(store.summary(runId), null, 2));
+  writeArtifactOutput(run.artifact_dir, path.join(run.artifact_dir, "cost-ledger.json"), JSON.stringify(costLedger, null, 2));
+  writeArtifactOutput(run.artifact_dir, path.join(run.artifact_dir, "results.jsonl"), items.map((item) => JSON.stringify(item)).join("\n") + "\n");
 }
 
 function injectedFailureMessage(manifest: RunManifest, item: RunItem): string | null {
@@ -883,17 +872,19 @@ function injectedFailureMessage(manifest: RunManifest, item: RunItem): string | 
   return null;
 }
 
-function writeMacroReport(output: string, report: unknown): string {
-  const resolved = path.resolve(output);
-  if (isCommandCentreStatePath(resolved)) {
-    throw new HarnessError(
-      "command_centre_state_write_blocked",
-      "Harness must not write Command Centre/_state directly; route this through Agent OS"
-    );
+function writeMacroReport(output: string, report: unknown, artifactRoot: string): string {
+  return writeArtifactOutput(artifactRoot, output, JSON.stringify(report, null, 2));
+}
+
+function resolveRunArtifactDirectory(artifactRoot: string, requested: string | undefined, runId: string): string {
+  if (!requested) {
+    return path.join(artifactRoot, runId);
   }
-  fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  fs.writeFileSync(resolved, JSON.stringify(report, null, 2));
-  return resolved;
+  if (path.isAbsolute(requested)) {
+    return requested;
+  }
+  const segments = requested.split(/[\\/]+/).filter(Boolean);
+  return path.join(artifactRoot, ...(segments[0] === "artifacts" ? segments.slice(1) : segments));
 }
 
 function localMacroAuthority(): Record<string, boolean | string> {
@@ -908,11 +899,6 @@ function localMacroAuthority(): Record<string, boolean | string> {
     external_api_calls: false,
     transport: "fake_or_dry_run_only"
   };
-}
-
-function isCommandCentreStatePath(filePath: string): boolean {
-  const normalised = filePath.split(path.sep).join("/");
-  return normalised.includes("/Documents/Obsidian/Command Centre/_state/");
 }
 
 function redactReceiptForArtifact(manifest: RunManifest): RunManifest {

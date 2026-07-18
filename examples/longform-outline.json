@@ -1,0 +1,19 @@
+{
+  "title": "The Durable Work Handbook",
+  "audience": "Operators building long-running AI workflows",
+  "voice": "Direct, practical, evidence-led British English",
+  "sections": [
+    {
+      "title": "Why long jobs fail",
+      "brief": "Explain context limits, partial failure, unsafe retries and weak proof boundaries."
+    },
+    {
+      "title": "The durable workload spine",
+      "brief": "Show manifest, shard ledger, bounded worker, validation, reconciliation and review artefacts."
+    },
+    {
+      "title": "Operating the system",
+      "brief": "Give a concrete enqueue, supervise, validate and reconcile workflow with failure recovery."
+    }
+  ]
+}

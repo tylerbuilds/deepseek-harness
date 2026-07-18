@@ -224,7 +224,7 @@ test("live transport rescans outbound payload and sanitises provider errors", as
       return new Response("{}", { status: 200 });
     };
     const secretManifest = baseManifest({
-      items: [{ id: "a", prompt: "api_key = abcDEF0123456789abcDEF0123456789" }]
+      items: [{ id: "a", prompt: ["api", "_key", " = ", "abcDEF0123456789", "abcDEF0123456789"].join("") }]
     });
     await assert.rejects(
       () => new DeepSeekLiveTransport("not-a-real-key", "https://unused.invalid").complete(secretManifest, secretManifest.items[0]),
@@ -256,6 +256,22 @@ test("live transport rescans outbound payload and sanitises provider errors", as
     await assert.rejects(
       () => new DeepSeekLiveTransport("not-a-real-key", "https://unused.invalid").complete(safeManifest, safeManifest.items[0]),
       (error: unknown) => error instanceof HarnessError && error.code === "deepseek_response_model_mismatch"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("live transport aborts a hung provider request at the configured deadline", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (_input, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("timed out", "TimeoutError")), { once: true });
+    });
+    const manifest = baseManifest();
+    await assert.rejects(
+      () => new DeepSeekLiveTransport("not-a-real-key", "https://unused.invalid", 5).complete(manifest, manifest.items[0]),
+      (error: unknown) => error instanceof HarnessError && error.code === "deepseek_request_timeout"
     );
   } finally {
     globalThis.fetch = originalFetch;

@@ -50,10 +50,15 @@ export class DeepSeekDryRunTransport implements CompletionTransport {
 export class DeepSeekLiveTransport implements CompletionTransport {
   readonly apiKey: string;
   readonly baseUrl: string;
+  readonly timeoutMs: number;
 
-  constructor(apiKey: string, baseUrl = "https://api.deepseek.com") {
+  constructor(apiKey: string, baseUrl = "https://api.deepseek.com", timeoutMs = 120_000) {
+    if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 3_600_000) {
+      throw new HarnessError("invalid_deepseek_timeout", "DeepSeek request timeout must be an integer between 1 and 3600000 milliseconds");
+    }
     this.apiKey = apiKey;
     this.baseUrl = baseUrl.replace(/\/$/, "");
+    this.timeoutMs = timeoutMs;
   }
 
   async complete(manifest: RunManifest, item: RunItem): Promise<CompletionResult> {
@@ -66,14 +71,23 @@ export class DeepSeekLiveTransport implements CompletionTransport {
         { findings: privacy.findings }
       );
     }
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`
-      },
-      body: JSON.stringify(request)
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(this.timeoutMs)
+      });
+    } catch (error) {
+      if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
+        throw new HarnessError("deepseek_request_timeout", "DeepSeek API request exceeded the configured timeout");
+      }
+      throw error;
+    }
 
     const raw = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     if (!response.ok) {

@@ -44,7 +44,7 @@ const SECRET_SIGNALS: Array<[RegExp, string]> = [
   [/\bAKIA[A-Z0-9]{16}\b/, "aws_access_key"],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/, "jwt_token"],
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----/i, "private_key_block"],
-  [/\b(?:api[\s_-]?key|secret|password|passwd|access[\s_-]?token|refresh[\s_-]?token)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{16,}/i, "credential_assignment"]
+  [/\b(?:api[\s_-]?key|client[\s_-]?secret|db[\s_-]?password|secret|password|passwd|token|access[\s_-]?token|refresh[\s_-]?token)["']?\s*[:=]\s*["']?[^\s,"'}]{1,}/i, "credential_assignment"]
 ];
 
 const DISCUSSION_SIGNALS: Array<[RegExp, string]> = [
@@ -72,12 +72,24 @@ const CLIENT_SIGNALS: Array<[RegExp, string]> = [
 
 const PRIVATE_ORIGIN_SIGNALS: Array<[RegExp, string]> = [
   [/(?:^|[/\\])\.env(?:\.|$)/i, "private_env_origin"],
-  [/(?:\/Users\/[^/]+\/Documents\/Obsidian|Command Centre\/_state)/i, "private_workspace_origin"],
+  [/(?:\/Users\/[^/]+\/Documents\/Obsidian|\/home\/[^/]+\/Documents\/Obsidian|[A-Za-z]:[\\/]+Users[\\/]+[^\\/]+[\\/]+Documents[\\/]+Obsidian|\/private-workspace-state(?:\/|$))/i, "private_workspace_origin"],
   [/(?:client|customer)[-_ ]?(?:private|confidential)/i, "private_client_origin"]
 ];
 
 export function classifyManifestPrivacy(manifest: ManifestLike): PrivacyReport {
-  const findings = manifest.items.flatMap((item) => classifyText(item.id, itemText(item)));
+  const findings = manifest.items.flatMap((item) => {
+    const scan = itemText(item);
+    const itemFindings = classifyText(item.id, scan.text);
+    if (scan.unscannableMetadata) {
+      itemFindings.push({
+        item_id: item.id,
+        category: "secrets_or_credentials",
+        signal: "unscannable_metadata",
+        severity: "blocker"
+      });
+    }
+    return itemFindings;
+  });
   const blockers = findings.filter((finding) => finding.severity === "blocker");
   const recommended = blockers.reduce<EgressClass>((current, finding) => {
     return CLASS_RANK[finding.category] > CLASS_RANK[current] ? finding.category : current;
@@ -154,9 +166,36 @@ function pushMatches(
   }
 }
 
-function itemText(item: ManifestLike["items"][number]): string {
+const PROVENANCE_SHA256_KEYS = new Set([
+  "glossary_sha256",
+  "input_sha256",
+  "network_payload_sha256",
+  "output_sha256",
+  "payload_sha256",
+  "shard_sha256",
+  "source_sha256",
+  "target_sha256"
+]);
+
+function itemText(item: ManifestLike["items"][number]): { text: string; unscannableMetadata: boolean } {
   const prompt = item.prompt ?? "";
   const messages = item.messages?.map((message) => message.content).join("\n") ?? "";
-  const metadata = item.metadata ? JSON.stringify(item.metadata) : "";
-  return [prompt, messages, metadata].filter(Boolean).join("\n");
+  let metadata = "";
+  try {
+    metadata = item.metadata
+      ? JSON.stringify(item.metadata, (key, value: unknown) => {
+          if (
+            PROVENANCE_SHA256_KEYS.has(key.toLowerCase()) &&
+            typeof value === "string" &&
+            /^[a-f0-9]{64}$/i.test(value)
+          ) {
+            return "[digest]";
+          }
+          return value;
+        })
+      : "";
+  } catch {
+    return { text: [prompt, messages].filter(Boolean).join("\n"), unscannableMetadata: true };
+  }
+  return { text: [prompt, messages, metadata].filter(Boolean).join("\n"), unscannableMetadata: false };
 }

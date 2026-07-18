@@ -13,7 +13,7 @@ Codex -> reconciles outputs and final proof
 
 ## Boundaries
 
-- `Command Centre/_state` writes are blocked by the harness.
+- Direct writes to protected private-workspace state are blocked by the harness.
 - Live DeepSeek inference requires an owner-signed, one-use exact-payload receipt and `allow-live`.
 - Local repo apply, deploy, publish, send, GitHub write and qmd refresh are out of scope.
 - Agent OS owns queue state, canonical memory and closeout; the separate owner approval authority signs inference receipts.

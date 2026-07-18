@@ -35,7 +35,7 @@ test("privacy checker blocks credential values without returning matched text", 
     cost_cap_usd: 0.05,
     canonical_writes: false,
     external_side_effects: false,
-    items: [{ id: "a", prompt: "api_key = abcDEF0123456789abcDEF0123456789" }]
+    items: [{ id: "a", prompt: ["api", "_key", " = ", "abcDEF0123456789", "abcDEF0123456789"].join("") }]
   }) as {
     ok: boolean;
     privacy: { recommended_egress_class: string; findings: Array<{ signal: string }> };
@@ -110,7 +110,7 @@ test("writes golden artefacts including cost ledger and review packet ledger", a
 
 test("runs agent canary and workload benchmark macros locally", async () => {
   const { root, context } = tempContext();
-  const canary = await agentCanary(context, { output: path.join(root, "agent-canary.json") }) as {
+  const canary = await agentCanary(context, { output: path.join(root, "artifacts", "agent-canary.json") }) as {
     ok: boolean;
     path: string;
     report: { status: string; artefacts: { review_packet: string; cost_ledger: string } };
@@ -125,7 +125,7 @@ test("runs agent canary and workload benchmark macros locally", async () => {
     workload: "extraction",
     items: 5,
     concurrency: 2,
-    output: path.join(root, "benchmark.json")
+    output: path.join(root, "artifacts", "benchmark.json")
   }) as {
     ok: boolean;
     report: { status: string; workload: string; summary: { item_count: number }; available_workloads: Array<{ name: string }> };
@@ -139,7 +139,7 @@ test("runs agent canary and workload benchmark macros locally", async () => {
 
 test("failure canary proves partial failure handling", async () => {
   const { root, context } = tempContext();
-  const result = await failureCanary(context, { output: path.join(root, "failure.json") }) as {
+  const result = await failureCanary(context, { output: path.join(root, "artifacts", "failure.json") }) as {
     ok: boolean;
     report: { status: string; summary: { status: string; counts: Record<string, number> } };
   };

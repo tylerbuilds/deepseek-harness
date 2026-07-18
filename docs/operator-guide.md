@@ -4,6 +4,10 @@ This harness is for fast, bounded DeepSeek batch inference with local evidence.
 It is not an approval system, repo applier, publisher, deployer, state writer or
 secret manager.
 
+The `v0.0.1` artefact is a GitHub/source release. `package.json` is intentionally
+private to npm; `npm run pack:check` is a local allowlist check only, not a
+publication workflow.
+
 ## Normal Route
 
 1. Write or choose a manifest with non-sensitive prompts.
@@ -26,12 +30,22 @@ node dist/src/cli.js agent-canary --output artifacts/agent-canary.json
 node dist/src/cli.js workload-benchmark --workload classification --items 12 --concurrency 4 --output artifacts/workload-benchmark.json
 node dist/src/cli.js failure-canary --output artifacts/failure-canary.json
 node dist/src/cli.js scale-ramp examples/basic-run.json --concurrency 5,10,20 --items 40 --output artifacts/scale-ramp-local.json
-cargo run -p deepseek-harness-worker -- --manifest examples/basic-run.json --transport fake --concurrency 4 --output artifacts/rust-worker-basic-run.json
+cargo run -p deepseek-harness-worker -- --manifest examples/basic-run.json --transport fake --concurrency 4 --output rust-worker-basic-run.json
 bash scripts/install-local.sh --install-dir "$HOME/bin" --print-config
 npm run mcp:smoke -- --command "$HOME/bin/deepseek-harness-mcp"
 ```
 
 The default example uses `transport: "fake"` and does not call DeepSeek.
+
+## Heavy Corpus Route
+
+Use `docs/corpus-heavy-workloads.md` for whole books, PDF/image OCR,
+translations with reviewed local memory, JSONL datasets, long-form sections,
+media catalogues and the bounded supervisor. The persistent launchd example is
+checked in but is not installed automatically. Its default worker defers live
+DeepSeek ledgers without changing them; persistent live authority is not
+supported. Live corpus work runs directly as one separately signed bounded
+batch.
 
 ## Rust Worker
 
@@ -94,9 +108,9 @@ node dist/src/cli.js plan artifacts/live-scale-ramp-approved.json --allow-live
 node dist/src/cli.js scale-ramp artifacts/live-scale-ramp-approved.json --concurrency 5,10,20 --items 40 --output artifacts/live-scale-ramp.json --allow-live --allow-live-scale
 ```
 
-The live 2026-07-06 ramp used `deepseek-v4-flash`, non-sensitive seed prompts,
-40 items per leg and a `0.25` USD manifest cap. It completed 120/120 items with
-no failed items.
+Do not copy local throughput numbers into release notes or operational claims.
+Record any machine- and manifest-specific measurements in the local artefact
+directory and review them separately from this source release.
 
 ## Evidence Exports
 

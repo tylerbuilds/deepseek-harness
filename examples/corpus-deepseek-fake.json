@@ -1,0 +1,41 @@
+{
+  "schema_version": "deepseek-harness.corpus.v1",
+  "job_id": "corpus-deepseek-fake",
+  "project": "corpus-deepseek-fake",
+  "workload_type": "book_reading",
+  "privacy_lane": "local_only",
+  "artifact_dir": "artifacts/corpus/corpus-deepseek-fake",
+  "processor": {
+    "type": "deepseek_batch",
+    "transport": "fake",
+    "model": "deepseek-v4-flash",
+    "response_format": "text",
+    "prompt_template": "Summarise shard {{shard_id}} from source {{source_id}} with bounds {{bounds}}:\n\n{{text}}",
+    "concurrency": 2,
+    "cost_cap_usd": 0.05
+  },
+  "sources": [
+    {
+      "id": "sample-book",
+      "type": "text"
+    }
+  ],
+  "shards": [
+    {
+      "id": "chapter-1",
+      "source_id": "sample-book",
+      "inline_text": "Chapter one sample text.",
+      "bounds": {
+        "chapter": 1
+      }
+    },
+    {
+      "id": "chapter-2",
+      "source_id": "sample-book",
+      "inline_text": "Chapter two sample text.",
+      "bounds": {
+        "chapter": 2
+      }
+    }
+  ]
+}

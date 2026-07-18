@@ -1,11 +1,18 @@
-# Dependency Review - 2026-07-06
+# Dependency Review — v0.0.1 — 2026-07-18
 
-## Verdict
+## Scope and outcome
 
-Current `main` dependency posture is acceptable for a pre-release public CLI/MCP
-tool.
+This review covers the dependencies declared by the source release's npm and
+Rust manifests. The project is a local CLI/MCP sidecar, not a hosted service.
+`package.json` is intentionally private to npm and the Rust workspace is
+configured with `publish = false`; no package publication is implied by this
+review.
 
-## Node Dependencies
+The Node audit was clean at review time. The Rust tests passed, but neither
+`cargo audit` nor `cargo deny` is installed in this environment, so no Rust
+advisory database result is claimed here.
+
+## Node dependencies
 
 Direct runtime dependencies:
 
@@ -17,26 +24,24 @@ Direct development dependencies:
 - `@types/node`
 - `typescript`
 
-Audit result:
+Checks:
 
 ```bash
 npm audit --audit-level=high
+npm ls --all --depth=2
 ```
 
-Result: `0` vulnerabilities.
+Observed result: `npm audit --audit-level=high` reported zero vulnerabilities;
+`npm ls --all --depth=2` resolved the lockfile without invalid or missing
+required dependencies.
 
-## Dependency Notes
+`@modelcontextprotocol/sdk` supplies the MCP protocol surface. `zod` keeps
+manifest and receipt validation explicit. TypeScript and `@types/node` are
+build-time dependencies.
 
-- `@modelcontextprotocol/sdk` brings a larger transitive tree than the harness
-  itself, including HTTP/server packages used by the SDK. This is acceptable
-  because MCP compatibility is core functionality.
-- `zod` is justified for runtime manifest validation and keeps safety gates
-  explicit.
-- `typescript` and `@types/node` are standard build-time dependencies.
+## Rust dependencies
 
-## Rust Dependencies
-
-Rust dependencies are not on `main` yet. PR #2 proposes:
+The fake worker depends on:
 
 - `anyhow`
 - `clap`
@@ -46,26 +51,24 @@ Rust dependencies are not on `main` yet. PR #2 proposes:
 - `sha2`
 - `tokio`
 
-Preliminary review:
+These dependencies support the local fake worker and its report format. The
+worker is not a live provider client and is not published as a crate.
 
-- These are mainstream Rust crates with clear purpose.
-- They are appropriate for a fake worker CLI.
-- Before merging Rust live transport or SQLite writes, add dependency audit
-  tooling such as `cargo audit` or `cargo deny`.
+```bash
+cargo test --locked
+cargo audit
+cargo deny check
+```
 
-## Resist-By-Default Rules
+`cargo test --locked` passed for this review. The two advisory-audit commands
+were unavailable locally; run one of them in CI or a release environment before
+making a future dependency or transport change.
 
-- Do not add a dependency for trivial helpers.
-- Avoid long-running daemons or web server dependencies until the source-only
-  CLI/MCP bridge is proven.
-- Avoid external queue/database dependencies until SQLite/JSONL recovery is
-  implemented.
-- Do not add live provider SDKs until the current fetch/HTTP path is shown to be
-  insufficient.
+## Dependency rules
 
-## Next Dependency Gates
-
-- Add CI for `npm audit --audit-level=high`.
-- Add Rust dependency audit after PR #2 lands.
-- Review licences before choosing the repo licence.
-- Re-run this review before first tagged release.
+- Do not add a dependency for a trivial helper.
+- Keep live provider SDKs out until the existing guarded transport is shown to
+  be insufficient.
+- Avoid external queue, database or daemon dependencies in the local sidecar.
+- Re-run the Node and Rust dependency checks when lockfiles or release
+  boundaries change.

@@ -3,6 +3,8 @@ dist/
 target/
 .state/
 artifacts/
+translation-memory/
+.omo/
 *.log
 .env
 .env.*

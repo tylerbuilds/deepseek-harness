@@ -98,21 +98,21 @@ Deliverables:
 
 ## DSH-17 OCR And Document Ingest Lane
 
-Status: future / not now.
+Status: released in v0.0.1 for local image/PDF OCR. Future work is limited to
+additional engines and fixtures; it does not expand external egress authority.
 
 Skills: `mcp-server-design`, `parallel-llm-batch-processing`,
 `testing-golden-artifacts`.
 
-Goal: evaluate screenshot/PDF OCR-to-document workflows as an optional harness
-lane for agents, without weakening the current text-only DeepSeek API safety
-contract.
+Goal: maintain the local screenshot/PDF OCR-to-document workflow without
+weakening the existing DeepSeek API safety contract.
 
 Context:
 
 - Slack may be a useful capture surface, but it should not be treated as the
   OCR system of record.
-- DeepSeek-OCR is a separate model/runtime path, not a drop-in replacement for
-  the current chat-completions transport.
+- DeepSeek-OCR remains a separate model/runtime path, not a drop-in replacement
+  for the current chat-completions transport.
 - OCR inputs may contain private or sensitive text, so live external egress must
   stay blocked by default until the data classification and approval route are
   explicit.

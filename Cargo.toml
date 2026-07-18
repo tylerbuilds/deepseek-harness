@@ -3,6 +3,7 @@ members = ["crates/deepseek-harness-worker"]
 resolver = "3"
 
 [workspace.package]
+version = "0.0.1"
 edition = "2024"
-license = "UNLICENSED"
+license = "MIT"
 publish = false

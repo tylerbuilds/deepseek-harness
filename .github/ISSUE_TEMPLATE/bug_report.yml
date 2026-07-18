@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a reproducible problem in the local CLI or MCP server.
+title: "bug: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include API keys, approval receipts, private prompts, customer data, local state or artefacts.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: State the observed and expected behaviour.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Safe reproduction
+      description: Use a fake or dry-run manifest and redact any sensitive values.
+      placeholder: |
+        1. Run ...
+        2. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Harness version or commit
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Node, OS and Rust versions if relevant. Do not attach environment files.
