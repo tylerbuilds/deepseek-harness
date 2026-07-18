@@ -131,6 +131,9 @@ export function buildMediaCorpusManifest(input: BuildMediaCorpusManifestInput): 
   const shards: MediaCorpusShard[] = [];
   for (const filePath of regularFiles) {
     const beforeStat = fs.statSync(filePath);
+    if (beforeStat.nlink > 1) {
+      throw new HarnessError("corpus_input_path_blocked", "Media input must not be a hard-linked regular file");
+    }
     const beforeHash = hashFile(filePath);
     const media = probeMedia(filePath);
     if (!media) {
@@ -138,6 +141,9 @@ export function buildMediaCorpusManifest(input: BuildMediaCorpusManifestInput): 
     }
 
     const afterStat = fs.statSync(filePath);
+    if (afterStat.nlink > 1) {
+      throw new HarnessError("corpus_input_path_blocked", "Media input must not be a hard-linked regular file");
+    }
     const fileHash = hashFile(filePath);
     if (
       beforeHash !== fileHash ||
@@ -275,6 +281,11 @@ function visitDirectory(directory: string, root: string, recursive: boolean, fil
         });
       }
       if (entryStat.isFile()) {
+        if (entryStat.nlink > 1) {
+          throw new HarnessError("corpus_input_path_blocked", "Media input must not be a hard-linked regular file", {
+            path: toPosixRelativePath(root, entryPath)
+          });
+        }
         files.push(entryPath);
         if (files.length > limit) {
           return;

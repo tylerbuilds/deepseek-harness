@@ -156,6 +156,37 @@ test("rejects symlinked media entries", mediaToolTestOptions, () => {
   }
 });
 
+test("rejects hard-linked media entries outside the configured input root", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "deepseek-harness-media-hard-link-"));
+  const inputRoot = path.join(root, "input");
+  const outsideRoot = path.join(root, "outside");
+  const previousInputRoot = process.env.DEEPSEEK_HARNESS_INPUT_ROOT;
+  try {
+    fs.mkdirSync(inputRoot);
+    fs.mkdirSync(outsideRoot);
+    const outsideMedia = path.join(outsideRoot, "outside.wav");
+    fs.writeFileSync(outsideMedia, "outside media content");
+    fs.linkSync(outsideMedia, path.join(inputRoot, "linked.wav"));
+    process.env.DEEPSEEK_HARNESS_INPUT_ROOT = inputRoot;
+
+    assert.throws(
+      () => buildMediaCorpusManifest({
+        project: "unit-media-hard-link",
+        sourcePath: inputRoot,
+        privacyLane: "local_only"
+      }),
+      /hard-linked regular file/
+    );
+  } finally {
+    if (previousInputRoot === undefined) {
+      delete process.env.DEEPSEEK_HARNESS_INPUT_ROOT;
+    } else {
+      process.env.DEEPSEEK_HARNESS_INPUT_ROOT = previousInputRoot;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("fails closed when regular files exceed maxFiles", mediaToolTestOptions, () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "deepseek-harness-media-"));
   try {
