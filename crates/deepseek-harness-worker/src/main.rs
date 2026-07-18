@@ -177,11 +177,31 @@ fn canonical_directory(path: &Path, label: &str, create: bool) -> Result<PathBuf
 }
 
 fn confined_input_file(root: &Path, candidate: &Path) -> Result<PathBuf> {
-    let resolved = if candidate.is_absolute() {
-        candidate.to_path_buf()
-    } else {
-        root.join(candidate)
-    };
+    if candidate.is_absolute()
+        || candidate.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
+    {
+        bail!("manifest must be a relative path beneath --input-root");
+    }
+    let resolved = root.join(candidate);
+    let mut current = root.to_path_buf();
+    for component in candidate.components() {
+        if let std::path::Component::Normal(segment) = component {
+            current.push(segment);
+            let metadata = fs::symlink_metadata(&current).with_context(|| {
+                format!("failed to inspect manifest path {}", candidate.display())
+            })?;
+            if metadata.file_type().is_symlink() {
+                bail!("manifest path must not contain symlinks");
+            }
+        }
+    }
     let canonical = fs::canonicalize(&resolved)
         .with_context(|| format!("failed to resolve manifest {}", candidate.display()))?;
     let metadata = fs::metadata(&canonical)?;
@@ -235,16 +255,53 @@ fn confined_output_path(root: &Path, candidate: &Path) -> Result<PathBuf> {
 }
 
 fn write_report(output: &Path, report_json: &str) -> Result<()> {
+    let parent = output
+        .parent()
+        .context("worker report must have a parent directory")?;
+    let file_name = output
+        .file_name()
+        .context("worker report must name a file")?
+        .to_string_lossy();
+    let temporary = parent.join(format!(
+        ".{file_name}.{}.{}.tmp",
+        std::process::id(),
+        now_unix_ms()
+    ));
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(output)
+        .open(&temporary)
         .with_context(|| format!("failed to create worker report {}", output.display()))?;
-    file.write_all(report_json.as_bytes())
-        .with_context(|| format!("failed to write worker report {}", output.display()))?;
-    file.sync_all()
-        .with_context(|| format!("failed to sync worker report {}", output.display()))?;
-    Ok(())
+    let result = (|| -> Result<()> {
+        file.write_all(report_json.as_bytes())
+            .with_context(|| format!("failed to write worker report {}", output.display()))?;
+        file.sync_all()
+            .with_context(|| format!("failed to sync worker report {}", output.display()))?;
+        drop(file);
+        fs::rename(&temporary, output)
+            .with_context(|| format!("failed to publish worker report {}", output.display()))?;
+        sync_directory(parent)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn sync_directory(directory: &Path) -> Result<()> {
+    let handle = fs::File::open(directory).with_context(|| {
+        format!(
+            "failed to open worker report directory {}",
+            directory.display()
+        )
+    })?;
+    handle.sync_all().with_context(|| {
+        format!(
+            "failed to sync worker report directory {}",
+            directory.display()
+        )
+    })
 }
 
 fn validate_manifest(manifest: &Manifest, transport: Transport) -> Result<()> {
@@ -458,6 +515,12 @@ mod tests {
             input_root.join("linked-manifest.json"),
         )
         .unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            input_root.join("manifest.json"),
+            input_root.join("symlinked-manifest.json"),
+        )
+        .unwrap();
 
         let canonical_input = canonical_directory(&input_root, "input root", false).unwrap();
         let canonical_artifact =
@@ -465,8 +528,24 @@ mod tests {
         assert!(confined_input_file(&canonical_input, Path::new("manifest.json")).is_ok());
         assert!(confined_input_file(&canonical_input, &root.join("outside.json")).is_err());
         assert!(confined_input_file(&canonical_input, Path::new("linked-manifest.json")).is_err());
+        assert!(
+            confined_input_file(&canonical_input, Path::new("symlinked-manifest.json")).is_err()
+        );
         assert!(confined_output_path(&canonical_artifact, Path::new("nested/report.json")).is_ok());
         assert!(confined_output_path(&canonical_artifact, Path::new("../outside.json")).is_err());
+
+        let report_path =
+            confined_output_path(&canonical_artifact, Path::new("nested/report.json")).unwrap();
+        write_report(&report_path, "report").unwrap();
+        assert_eq!(fs::read_to_string(&report_path).unwrap(), "report");
+        assert_eq!(
+            fs::read_dir(report_path.parent().unwrap())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+                .count(),
+            0
+        );
 
         fs::remove_dir_all(root).unwrap();
     }

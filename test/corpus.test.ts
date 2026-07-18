@@ -430,7 +430,7 @@ test("blocks shard symlink escapes and sibling substitution for file sources", (
   try {
     assert.throws(
       () => corpusStart(manifest(sourceDir, escapedLink, "corpus-symlink-escape")),
-      /Shard input is outside declared source path/
+      /Corpus input path must not contain symlinks/
     );
     assert.throws(
       () => corpusStart(manifest(declaredFile, siblingFile, "corpus-sibling-substitution")),

@@ -69,7 +69,9 @@ export function assertSafeCorpusSourcePath(
     danglingCode: "corpus_input_path_blocked",
     danglingMessage: "Corpus input path contains a dangling symlink",
     escapeCode: "corpus_input_path_blocked",
-    escapeMessage: "Corpus input resolves outside DEEPSEEK_HARNESS_INPUT_ROOT"
+    escapeMessage: "Corpus input resolves outside DEEPSEEK_HARNESS_INPUT_ROOT",
+    rejectSymlinks: true,
+    symlinkMessage: "Corpus input path must not contain symlinks"
   });
   const safePath = realPath ?? resolved;
   if (realPath !== undefined) {
@@ -277,6 +279,8 @@ interface ExistingPathErrors {
   danglingMessage: string;
   escapeCode: string;
   escapeMessage: string;
+  rejectSymlinks?: boolean;
+  symlinkMessage?: string;
 }
 
 function inspectExistingPath(
@@ -300,6 +304,10 @@ function inspectExistingPath(
         return undefined;
       }
       throw new HarnessError(errors.escapeCode, errors.escapeMessage);
+    }
+
+    if (stats.isSymbolicLink() && errors.rejectSymlinks) {
+      throw new HarnessError(errors.escapeCode, errors.symlinkMessage ?? errors.escapeMessage);
     }
 
     try {

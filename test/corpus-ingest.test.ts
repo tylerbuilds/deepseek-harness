@@ -126,8 +126,8 @@ test("blocks protected text and JSONL sources before reading their contents", ()
       chunkChars: 10,
       overlapChars: 0
     }),
-    "corpus_path_forbidden",
-    /forbidden/
+    "corpus_input_path_blocked",
+    /must not contain symlinks/
   );
   assertHarnessError(
     () => buildJsonlCorpusManifest({
