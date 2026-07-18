@@ -8,6 +8,8 @@ import { spawnSync } from "node:child_process";
 import { buildMediaCorpusManifest } from "../src/corpus_media.js";
 import { validateCorpusWorkload } from "../src/corpus_validation.js";
 
+process.env.DEEPSEEK_HARNESS_INPUT_ROOT = os.tmpdir();
+
 const TEST_COMMAND_TIMEOUT_MS = 30_000;
 const TEST_MAX_BUFFER_BYTES = 4 * 1024 * 1024;
 const mediaToolsAvailable = commandAvailable("ffmpeg") && commandAvailable("ffprobe");
@@ -44,13 +46,13 @@ test("builds deterministic sorted media catalogue shards from ffprobe JSON", med
       manifest.sources.map((source) => source.path),
       [path.resolve(root, "a-first.wav"), path.resolve(root, "z-last.wav")]
     );
-    assert.deepEqual(
-      validateCorpusWorkload({
-        workload_type: manifest.workload_type,
-        shards: manifest.shards
-      }),
-      []
-    );
+    const workloadContract = {
+      workload_type: manifest.workload_type,
+      processor: manifest.processor,
+      sources: manifest.sources,
+      shards: manifest.shards
+    };
+    assert.deepEqual(validateCorpusWorkload(workloadContract), []);
 
     for (const [index, shard] of manifest.shards.entries()) {
       const sidecar = JSON.parse(shard.inline_text) as {

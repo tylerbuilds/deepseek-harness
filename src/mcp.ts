@@ -2,6 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import packageMetadata from "../package.json" with { type: "json" };
 import {
   agentCanary,
   cancelRun,
@@ -47,7 +48,7 @@ import { toErrorPayload } from "./errors.js";
 
 const server = new McpServer({
   name: "deepseek-harness",
-  version: "0.1.0"
+  version: packageMetadata.version
 });
 
 function jsonContent(payload: unknown) {

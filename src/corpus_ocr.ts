@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { HarnessError } from "./errors.js";
+import { assertSafeCorpusSourcePath } from "./paths.js";
 
 export type OcrEngine = "auto" | "macos_vision" | "focr" | "tesseract";
 
@@ -215,7 +216,7 @@ function readSource(inputPath: unknown): NormalisedInputPath {
     throw new HarnessError("invalid_ocr_path", "OCR input path must be a non-empty string");
   }
 
-  const resolved = path.resolve(inputPath);
+  const resolved = assertSafeCorpusSourcePath(inputPath);
   let stats: fs.Stats;
   try {
     stats = fs.statSync(resolved);

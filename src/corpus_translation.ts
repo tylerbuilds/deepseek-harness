@@ -1,7 +1,7 @@
 import fs from "node:fs";
-import path from "node:path";
 import { createHash } from "node:crypto";
 import { HarnessError } from "./errors.js";
+import { assertSafeCorpusSourcePath } from "./paths.js";
 
 export type TranslationTransport = "fake" | "dry-run" | "deepseek";
 
@@ -538,7 +538,7 @@ function validateGlossaryTerm(term: TranslationGlossaryTerm, label: string): Tra
 }
 
 function parseGlossaryFile(filePathValue: string): ParsedGlossary {
-  const filePath = path.resolve(filePathValue);
+  const filePath = assertSafeCorpusSourcePath(filePathValue);
   let stat: fs.Stats;
   try {
     stat = fs.statSync(filePath);
@@ -574,7 +574,7 @@ function parseGlossaryFile(filePathValue: string): ParsedGlossary {
 function readSourceText(input: BuildTranslationCorpusManifestInput): string {
   const sourcePathValue = stringOption(input.sourcePath);
   if (sourcePathValue) {
-    const filePath = path.resolve(sourcePathValue);
+    const filePath = assertSafeCorpusSourcePath(sourcePathValue);
     let stat: fs.Stats;
     try {
       stat = fs.statSync(filePath);
@@ -611,7 +611,7 @@ function readSourceText(input: BuildTranslationCorpusManifestInput): string {
 
 function sourcePathFromInput(input: BuildTranslationCorpusManifestInput): string | undefined {
   const sourcePathValue = stringOption(input.sourcePath);
-  return sourcePathValue ? path.resolve(sourcePathValue) : undefined;
+  return sourcePathValue ? assertSafeCorpusSourcePath(sourcePathValue) : undefined;
 }
 
 function validateChunkOptions(chunkChars: number, overlapChars: number): void {
@@ -728,7 +728,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isExistingRegularFile(value: string): boolean {
   try {
-    return fs.statSync(path.resolve(value)).isFile();
+    return fs.statSync(assertSafeCorpusSourcePath(value)).isFile();
   } catch {
     return false;
   }

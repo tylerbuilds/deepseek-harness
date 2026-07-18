@@ -107,3 +107,15 @@ test("explicit short credential assignments fail closed", () => {
     assert.equal(report.findings.some((finding) => finding.signal === "credential_assignment"), true, content);
   }
 });
+
+test("private-workspace origins are blocked on macOS, Linux and Windows paths", () => {
+  for (const origin of [
+    "/Users/operator/Documents/Obsidian/private.md",
+    "/home/operator/Documents/Obsidian/private.md",
+    "C:\\Users\\operator\\Documents\\Obsidian\\private.md"
+  ]) {
+    const report = classifyOutboundPayload("private-origin", { source_path: origin });
+    assert.equal(report.external_deepseek_allowed, false, origin);
+    assert.equal(report.findings.some((finding) => finding.signal === "private_workspace_origin"), true, origin);
+  }
+});

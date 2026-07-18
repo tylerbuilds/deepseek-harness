@@ -35,7 +35,7 @@ test("privacy checker blocks credential values without returning matched text", 
     cost_cap_usd: 0.05,
     canonical_writes: false,
     external_side_effects: false,
-    items: [{ id: "a", prompt: "api_key = abcDEF0123456789abcDEF0123456789" }]
+    items: [{ id: "a", prompt: ["api", "_key", " = ", "abcDEF0123456789", "abcDEF0123456789"].join("") }]
   }) as {
     ok: boolean;
     privacy: { recommended_egress_class: string; findings: Array<{ signal: string }> };

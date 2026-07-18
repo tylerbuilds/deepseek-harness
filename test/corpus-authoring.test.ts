@@ -6,6 +6,8 @@ import path from "node:path";
 import { buildBookCorpusManifest, buildLongformCorpusManifest } from "../src/corpus_authoring.js";
 import { validateCorpusWorkload } from "../src/corpus_validation.js";
 
+process.env.DEEPSEEK_HARNESS_INPUT_ROOT = os.tmpdir();
+
 test("builds bounded book shards at Markdown and plain chapter boundaries", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "deepseek-harness-authoring-"));
   const sourcePath = path.join(root, "book.txt");

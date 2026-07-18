@@ -17,8 +17,16 @@ export interface CorpusValidationRecordLike {
 
 export interface CorpusWorkloadValidationInput {
   workload_type: CorpusWorkloadType;
+  processor?: unknown;
+  sources?: readonly {
+    id?: unknown;
+    path?: unknown;
+    sha256?: unknown;
+    type?: unknown;
+  }[];
   shards?: readonly CorpusValidationRecordLike[];
   ledgerShards?: readonly CorpusValidationRecordLike[];
+  acceptance?: unknown;
 }
 
 type ValidationSource = "manifest" | "ledger";
@@ -41,9 +49,15 @@ export function validateCorpusWorkload(input: CorpusWorkloadValidationInput): st
     case "dataset_transform":
       return records.flatMap(validateDatasetTransformRecord);
     case "media_catalogue":
-      return records.flatMap(validateMediaCatalogueRecord);
+      return [
+        ...(hasWorkloadContract(input) ? validateMediaCatalogueContract(input) : []),
+        ...records.flatMap((record) => validateMediaCatalogueRecord(record, hasWorkloadContract(input)))
+      ];
     case "translation":
-      return records.flatMap(validateTranslationRecord);
+      return [
+        ...(hasWorkloadContract(input) ? validateTranslationContract(input) : []),
+        ...records.flatMap((record) => validateTranslationRecord(record, hasWorkloadContract(input)))
+      ];
     default:
       return [];
   }
@@ -80,23 +94,25 @@ function validateDatasetTransformRecord(record: ValidationRecord): string[] {
   return blockers;
 }
 
-function validateMediaCatalogueRecord(record: ValidationRecord): string[] {
-  if (!hasMediaSidecar(record.record)) {
+function validateMediaCatalogueRecord(record: ValidationRecord, requireProvenance: boolean): string[] {
+  if (!requireProvenance && !hasMediaSidecar(record.record)) {
     return [];
   }
-
   const fields = mergedFieldView(record.record);
   const blockers: string[] = [];
   if (!hasAnyKnownValue(fields, ["duration", "duration_seconds", "duration_ms"])) {
     blockers.push(`media_catalogue_missing_duration:${recordLabel(record)}`);
   }
-  if (!hasAnyKnownValue(fields, ["hash", "sha256", "content_hash", "sidecar_hash", "sidecar_sha256"])) {
+  if (!(requireProvenance ? hasAnySha256(fields, ["hash", "sha256", "content_hash"]) : hasAnyKnownValue(fields, ["hash", "sha256", "content_hash"]))) {
     blockers.push(`media_catalogue_missing_hash:${recordLabel(record)}`);
+  }
+  if (requireProvenance && !hasAnySha256(fields, ["sidecar_hash", "sidecar_sha256", "shard_sha256"])) {
+    blockers.push(`media_catalogue_missing_sidecar_hash:${recordLabel(record)}`);
   }
   return blockers;
 }
 
-function validateTranslationRecord(record: ValidationRecord): string[] {
+function validateTranslationRecord(record: ValidationRecord, requireProvenance: boolean): string[] {
   if (!hasTranslationBounds(record.record)) {
     return [];
   }
@@ -108,6 +124,66 @@ function validateTranslationRecord(record: ValidationRecord): string[] {
   }
   if (!hasKnownValue(fields, "target_lang")) {
     blockers.push(`translation_missing_target_lang:${recordLabel(record)}`);
+  }
+  if (requireProvenance && !hasSha256(fields, "source_sha256")) {
+    blockers.push(`translation_missing_source_sha256:${recordLabel(record)}`);
+  }
+  if (requireProvenance && !hasSha256(fields, "shard_sha256")) {
+    blockers.push(`translation_missing_shard_sha256:${recordLabel(record)}`);
+  }
+  return blockers;
+}
+
+function hasWorkloadContract(input: CorpusWorkloadValidationInput): boolean {
+  return input.processor !== undefined || input.sources !== undefined || input.acceptance !== undefined;
+}
+
+function validateTranslationContract(input: CorpusWorkloadValidationInput): string[] {
+  const blockers: string[] = [];
+  const processorType = stringField(asRecord(input.processor) ?? {}, "type") ?? "missing";
+  if (processorType !== "deepseek_batch") {
+    blockers.push(`translation_processor_incompatible:${processorType}`);
+  }
+  for (const [index, source] of (input.sources ?? []).entries()) {
+    if (!hasSha256(source, "sha256")) {
+      blockers.push(`translation_source_sha256_required:${stringField(source, "id") ?? `source[${index}]`}`);
+    }
+  }
+  const acceptance = asRecord(input.acceptance);
+  const translation = asRecord(acceptance?.translation);
+  if (!translation) {
+    blockers.push("translation_acceptance_missing");
+    return blockers;
+  }
+  if (!hasKnownValue(translation, "source_lang")) {
+    blockers.push("translation_acceptance_missing_source_lang");
+  }
+  if (!hasKnownValue(translation, "target_lang")) {
+    blockers.push("translation_acceptance_missing_target_lang");
+  }
+  if (translation.preserve_placeholders !== true) {
+    blockers.push("translation_placeholder_preservation_required");
+  }
+  return blockers;
+}
+
+function validateMediaCatalogueContract(input: CorpusWorkloadValidationInput): string[] {
+  const blockers: string[] = [];
+  const processorType = stringField(asRecord(input.processor) ?? {}, "type") ?? "missing";
+  if (processorType !== "copy_text") {
+    blockers.push(`media_catalogue_processor_incompatible:${processorType}`);
+  }
+  for (const [index, source] of (input.sources ?? []).entries()) {
+    const label = stringField(source, "id") ?? `source[${index}]`;
+    if (!hasKnownValue(source, "path")) {
+      blockers.push(`media_catalogue_source_path_required:${label}`);
+    }
+    if (!hasSha256(source, "sha256")) {
+      blockers.push(`media_catalogue_source_sha256_required:${label}`);
+    }
+    if (source.type !== "audio" && source.type !== "video") {
+      blockers.push(`media_catalogue_source_type_invalid:${label}`);
+    }
   }
   return blockers;
 }
@@ -122,10 +198,9 @@ function hasPageBounds(bounds: Record<string, unknown>): boolean {
 
 function hasMediaSidecar(record: CorpusValidationRecordLike): boolean {
   const fields = mergedFieldView(record);
-  if (asRecord(record.sidecar)) {
-    return true;
-  }
-  return hasAnyKnownValue(fields, ["sidecar_path", "sidecar", "duration", "duration_seconds", "duration_ms", "hash", "sidecar_hash"]);
+  return Boolean(asRecord(record.sidecar)) || hasAnyKnownValue(fields, [
+    "sidecar_path", "sidecar", "duration", "duration_seconds", "duration_ms", "hash", "sidecar_hash"
+  ]);
 }
 
 function hasTranslationBounds(record: CorpusValidationRecordLike): boolean {
@@ -156,6 +231,15 @@ function numberField(record: Record<string, unknown>, key: string): number | und
 
 function hasAnyKnownValue(record: Record<string, unknown>, keys: readonly string[]): boolean {
   return keys.some((key) => hasKnownValue(record, key));
+}
+
+function hasAnySha256(record: Record<string, unknown>, keys: readonly string[]): boolean {
+  return keys.some((key) => hasSha256(record, key));
+}
+
+function hasSha256(record: Record<string, unknown>, key: string): boolean {
+  const value = record[key];
+  return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 }
 
 function hasKnownValue(record: Record<string, unknown>, key: string): boolean {

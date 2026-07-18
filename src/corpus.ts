@@ -7,7 +7,7 @@ import { TextDecoder } from "node:util";
 import { z } from "zod";
 import { canonicalJson } from "./approval.js";
 import { HarnessError } from "./errors.js";
-import { defaultArtifactRoot } from "./paths.js";
+import { assertSafeCorpusSourcePath, defaultArtifactRoot } from "./paths.js";
 import { approvalPacket, getResults, planManifest, submitManifest } from "./runner.js";
 import { approvalReceiptSchema, modelSchema, thinkingSchema, type RunManifest } from "./schema.js";
 import { validateCorpusWorkload } from "./corpus_validation.js";
@@ -161,8 +161,8 @@ export async function corpusStartAsync(
 ): Promise<Record<string, unknown>> {
   const runtimeManifest = parseCorpusManifest(input);
   if (runtimeManifest.processor.type === "deepseek_batch" && runtimeManifest.processor.transport === "deepseek") {
-    ensureShardSources(runtimeManifest);
     assertShardInputsSafe(runtimeManifest);
+    ensureShardSources(runtimeManifest);
     const sourceHashes = verifySourceIntegrity(runtimeManifest);
     verifyInlineShardIntegrity(runtimeManifest, sourceHashes);
     if (options.enqueueOnly) {
@@ -225,14 +225,15 @@ export async function corpusStartAsync(
 
 function corpusStartSync(input: unknown, options: { autoResume?: boolean } = {}): Record<string, unknown> {
   const manifest = parseCorpusManifest(input);
+  assertCorpusWorkloadContract(manifest);
   if (options.autoResume !== false && manifest.processor.type === "deepseek_batch") {
     throw new HarnessError(
       "corpus_async_processor_required",
       "deepseek_batch corpus jobs must start through corpusStartAsync"
     );
   }
-  ensureShardSources(manifest);
   assertShardInputsSafe(manifest);
+  ensureShardSources(manifest);
   const sourceHashes = verifySourceIntegrity(manifest);
   verifyInlineShardIntegrity(manifest, sourceHashes);
   if (
@@ -337,12 +338,12 @@ export function corpusStatus(jobId: string, options: { artifactDir?: string } = 
 
 export function corpusPlan(input: unknown, options: { allowLive?: boolean } = {}): Record<string, unknown> {
   const manifest = parseCorpusManifest(input);
-  ensureShardSources(manifest);
   assertShardInputsSafe(manifest);
+  ensureShardSources(manifest);
   const sourceHashes = verifySourceIntegrity(manifest);
   verifyInlineShardIntegrity(manifest, sourceHashes);
   const artifactDir = safeArtifactDir(manifest.artifact_dir ?? path.join(defaultArtifactRoot(), "corpus", manifest.job_id ?? "corpus-plan"));
-  const workloadBlockers = validateCorpusWorkload({ workload_type: manifest.workload_type, shards: manifest.shards });
+  const workloadBlockers = validateCorpusManifestWorkload(manifest);
   const preflight = corpusPreflight(manifest, artifactDir);
   const runPlan =
     manifest.processor.type === "deepseek_batch"
@@ -389,8 +390,8 @@ export function corpusApprovalPacket(
       "Corpus approval packets are only required for deepseek_batch processors"
     );
   }
-  ensureShardSources(manifest);
   assertShardInputsSafe(manifest);
+  ensureShardSources(manifest);
   const sourceHashes = verifySourceIntegrity(manifest);
   verifyInlineShardIntegrity(manifest, sourceHashes);
   if (manifest.processor.transport === "deepseek" && !deepSeekCorpusFitsSingleBatch(manifest)) {
@@ -564,17 +565,7 @@ export function corpusValidate(jobId: string, options: { artifactDir?: string } 
   const pending = ledger.shards
     .filter((shard) => shard.status === "pending" || shard.status === "leased" || shard.status === "running")
     .map((shard) => shard.shard_id);
-  const workloadBlockers = validateCorpusWorkload({
-    workload_type: manifest.workload_type,
-    shards: manifest.shards,
-    ledgerShards: ledger.shards.map((shard) => ({
-      shard_id: shard.shard_id,
-      bounds: shard.bounds,
-      source_id: shard.source_id,
-      output_path: shard.output_path,
-      output_sha256: shard.output_sha256
-    }))
-  });
+  const workloadBlockers = validateCorpusManifestWorkload(manifest, ledger);
   const translationQa = buildTranslationQa(manifest, ledger);
   const longformQa = buildLongformQa(manifest, ledger);
   const blockers = [
@@ -1170,6 +1161,37 @@ function parseCorpusManifest(input: unknown): CorpusManifest {
   return parsed.data;
 }
 
+function validateCorpusManifestWorkload(manifest: CorpusManifest, ledger?: CorpusLedger): string[] {
+  return validateCorpusWorkload({
+    workload_type: manifest.workload_type,
+    processor: manifest.processor,
+    sources: manifest.sources,
+    shards: manifest.shards,
+    acceptance: manifest.acceptance,
+    ...(ledger
+      ? {
+          ledgerShards: ledger.shards.map((shard) => ({
+            shard_id: shard.shard_id,
+            bounds: shard.bounds,
+            source_id: shard.source_id,
+            output_path: shard.output_path,
+            output_sha256: shard.output_sha256
+          }))
+        }
+      : {})
+  });
+}
+
+function assertCorpusWorkloadContract(manifest: CorpusManifest): void {
+  if (manifest.workload_type !== "translation" && manifest.workload_type !== "media_catalogue") {
+    return;
+  }
+  const blockers = validateCorpusManifestWorkload(manifest);
+  if (blockers.length > 0) {
+    throw new HarnessError("corpus_workload_contract_failed", "Corpus workload contract failed", { blockers });
+  }
+}
+
 function ensureShardSources(manifest: CorpusManifest): void {
   const sourceIds = new Set(manifest.sources.map((source) => source.id));
   const missingSource = manifest.shards.find((shard) => !sourceIds.has(shard.source_id));
@@ -1206,13 +1228,13 @@ function assertShardInputsSafe(manifest: CorpusManifest): void {
     if (!source.path) {
       continue;
     }
-    const sourcePath = path.resolve(source.path);
+    const sourcePath = assertSafeCorpusSourcePath(source.path);
     assertNotForbiddenPath(sourcePath);
     assertNotSensitiveSourcePath(sourcePath);
     if (!fs.existsSync(sourcePath)) {
       throw new HarnessError("corpus_source_missing", `Corpus source path does not exist: ${source.id}`);
     }
-    const realSourcePath = fs.realpathSync(sourcePath);
+    const realSourcePath = assertSafeCorpusSourcePath(fs.realpathSync(sourcePath));
     assertNotForbiddenPath(realSourcePath);
     assertNotSensitiveSourcePath(realSourcePath);
     const sourceStat = fs.statSync(realSourcePath);
@@ -1228,7 +1250,7 @@ function assertShardInputsSafe(manifest: CorpusManifest): void {
     if (!shard.input_path) {
       continue;
     }
-    const inputPath = path.resolve(shard.input_path);
+    const inputPath = assertSafeCorpusSourcePath(shard.input_path);
     assertNotForbiddenPath(inputPath);
     assertNotSensitiveSourcePath(inputPath);
     const sourceBoundary = sourceRoots.get(shard.source_id);
@@ -1241,7 +1263,7 @@ function assertShardInputsSafe(manifest: CorpusManifest): void {
     if (!fs.existsSync(inputPath)) {
       throw new HarnessError("corpus_shard_input_missing", `Shard input does not exist: ${shard.id}`);
     }
-    const realInputPath = fs.realpathSync(inputPath);
+    const realInputPath = assertSafeCorpusSourcePath(fs.realpathSync(inputPath));
     assertNotForbiddenPath(realInputPath);
     assertNotSensitiveSourcePath(realInputPath);
     if (

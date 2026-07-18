@@ -19,11 +19,22 @@ node dist/src/cli.js doctor
 The final command should return JSON with `"ok": true`. It also shows the
 local state and artefact directories the harness will use.
 
+This repository is the `v0.0.1` source release. It is intentionally private to
+npm; do not use `npm install deepseek-harness` or treat `npm pack` as a
+publication route. The package check exists only to prove that a local archive
+contains the explicitly allowlisted runtime and public documentation.
+
 Treat that artefact directory as the harness sandbox. CLI and MCP output
 arguments must stay beneath it, and corpus ingest rejects protected or
 credential-shaped local paths before reading them. Set
 `DEEPSEEK_HARNESS_ARTIFACT_DIR` at launch time if you need a different local
 volume; keep the documented `artifacts/...` paths in manifests and commands.
+
+Corpus sources have a separate read boundary. By default it is the directory
+where you launch the harness; set `DEEPSEEK_HARNESS_INPUT_ROOT` to a dedicated
+input directory when the source material lives elsewhere. MCP configuration
+emits the same setting. Paths outside that root, symlink escapes and protected
+credential or workspace paths are rejected before their contents are read.
 
 Run the included fake example:
 

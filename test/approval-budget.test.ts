@@ -224,7 +224,7 @@ test("live transport rescans outbound payload and sanitises provider errors", as
       return new Response("{}", { status: 200 });
     };
     const secretManifest = baseManifest({
-      items: [{ id: "a", prompt: "api_key = abcDEF0123456789abcDEF0123456789" }]
+      items: [{ id: "a", prompt: ["api", "_key", " = ", "abcDEF0123456789", "abcDEF0123456789"].join("") }]
     });
     await assert.rejects(
       () => new DeepSeekLiveTransport("not-a-real-key", "https://unused.invalid").complete(secretManifest, secretManifest.items[0]),

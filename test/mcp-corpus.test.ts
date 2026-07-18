@@ -21,13 +21,14 @@ test("MCP exposes and runs local corpus job tools", async () => {
     env: {
       ...process.env,
       DEEPSEEK_HARNESS_STATE_DIR: path.join(root, ".state"),
-      DEEPSEEK_HARNESS_ARTIFACT_DIR: artifactRoot
+      DEEPSEEK_HARNESS_ARTIFACT_DIR: artifactRoot,
+      DEEPSEEK_HARNESS_INPUT_ROOT: root
     }
   });
   const client = new Client(
     {
       name: "deepseek-harness-mcp-corpus-test",
-      version: "0.1.0"
+      version: "0.0.1"
     },
     {
       capabilities: {}

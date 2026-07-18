@@ -7,6 +7,9 @@ import {
   buildTranslationCorpusManifest,
   evaluateTranslationQa
 } from "../src/corpus_translation.js";
+import { validateCorpusWorkload } from "../src/corpus_validation.js";
+
+process.env.DEEPSEEK_HARNESS_INPUT_ROOT = os.tmpdir();
 
 test("builds a deterministic translation manifest with bounded, language-aware shards", () => {
   const input = {
@@ -60,6 +63,14 @@ test("builds a deterministic translation manifest with bounded, language-aware s
     "max_length_ratio",
     "preserve_placeholders"
   ]);
+  const workloadContract = {
+    workload_type: manifest.workload_type,
+    processor: manifest.processor,
+    sources: manifest.sources,
+    shards: manifest.shards.map((shard) => ({ ...shard })),
+    acceptance: manifest.acceptance
+  };
+  assert.deepEqual(validateCorpusWorkload(workloadContract), []);
 });
 
 test("enforces core prompt boundaries after translation instructions and custom text are concatenated", () => {

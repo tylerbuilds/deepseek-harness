@@ -14,6 +14,8 @@ import {
 import { buildTextCorpusManifest } from "../src/corpus_ingest.js";
 import { buildOcrCorpusManifest } from "../src/corpus_ocr.js";
 import { buildTranslationCorpusManifest } from "../src/corpus_translation.js";
+
+process.env.DEEPSEEK_HARNESS_INPUT_ROOT = os.tmpdir();
 import {
   commitReviewedTranslationMemoryBatch,
   openTranslationMemory

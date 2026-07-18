@@ -81,7 +81,7 @@ test("e2e MCP runs workload benchmark through stdio server", async () => {
   const client = new Client(
     {
       name: "deepseek-harness-e2e",
-      version: "0.1.0"
+      version: "0.0.1"
     },
     {
       capabilities: {}
@@ -90,6 +90,7 @@ test("e2e MCP runs workload benchmark through stdio server", async () => {
 
   try {
     await client.connect(transport);
+    assert.equal(client.getServerVersion()?.version, "0.0.1");
     const tools = await client.listTools();
     assert.equal(tools.tools.some((tool) => tool.name === "deepseek_harness_workload_benchmark"), true);
 

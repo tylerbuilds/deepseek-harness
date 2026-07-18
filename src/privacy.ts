@@ -72,7 +72,7 @@ const CLIENT_SIGNALS: Array<[RegExp, string]> = [
 
 const PRIVATE_ORIGIN_SIGNALS: Array<[RegExp, string]> = [
   [/(?:^|[/\\])\.env(?:\.|$)/i, "private_env_origin"],
-  [/(?:\/Users\/[^/]+\/Documents\/Obsidian|\/private-workspace-state(?:\/|$))/i, "private_workspace_origin"],
+  [/(?:\/Users\/[^/]+\/Documents\/Obsidian|\/home\/[^/]+\/Documents\/Obsidian|[A-Za-z]:[\\/]+Users[\\/]+[^\\/]+[\\/]+Documents[\\/]+Obsidian|\/private-workspace-state(?:\/|$))/i, "private_workspace_origin"],
   [/(?:client|customer)[-_ ]?(?:private|confidential)/i, "private_client_origin"]
 ];
 

@@ -7,6 +7,8 @@ import { createHash } from "node:crypto";
 import { buildJsonlCorpusManifest, buildTextCorpusManifest } from "../src/corpus_ingest.js";
 import { HarnessError } from "../src/errors.js";
 
+process.env.DEEPSEEK_HARNESS_INPUT_ROOT = os.tmpdir();
+
 const MAX_JSONL_RECORD_BYTES = 16 * 1024 * 1024;
 
 test("builds deterministic overlapping inline-text corpus shards", () => {

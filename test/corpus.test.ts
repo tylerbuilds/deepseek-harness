@@ -17,6 +17,8 @@ import {
   corpusWorkAsync
 } from "../src/corpus.js";
 
+process.env.DEEPSEEK_HARNESS_INPUT_ROOT = os.tmpdir();
+
 function makeCorpusLedgerStale(artifactDir: string): void {
   const ledgerPath = path.join(artifactDir, "ledger.json");
   const ledger = JSON.parse(fs.readFileSync(ledgerPath, "utf8")) as {
@@ -245,8 +247,29 @@ test("redacts signed approval authority from queued corpus artefacts", async () 
           signature_base64: signature
         }
       },
-      sources: [{ id: "source", type: "text" }],
-      shards: [{ id: "chunk-1", source_id: "source", inline_text: "hello" }]
+      sources: [{
+        id: "source",
+        type: "text",
+        sha256: createHash("sha256").update("hello").digest("hex")
+      }],
+      shards: [{
+        id: "chunk-1",
+        source_id: "source",
+        inline_text: "hello",
+        bounds: {
+          source_lang: "en",
+          target_lang: "fr",
+          source_sha256: createHash("sha256").update("hello").digest("hex"),
+          shard_sha256: createHash("sha256").update("hello").digest("hex")
+        }
+      }],
+      acceptance: {
+        translation: {
+          source_lang: "en",
+          target_lang: "fr",
+          preserve_placeholders: true
+        }
+      }
     }, { enqueueOnly: true });
 
     const manifestText = fs.readFileSync(path.join(artifactDir, "manifest.json"), "utf8");

@@ -25,9 +25,11 @@ New to the harness? Follow the [user guide](docs/user-guide.md) for a safe fake
 run, local CLI installation, MCP setup and the live-run approval boundary.
 Operators should also read the [operator guide](docs/operator-guide.md).
 
-This is an MIT-licensed source release. It is intentionally not published to
-npm: clone the repository and use the local installer when you want the CLI or
-MCP launchers on your machine.
+The `v0.0.1` release is an MIT-licensed source release. It is intentionally not
+published to npm: `package.json` remains private, and `npm run pack:check` is a
+local archive-boundary check rather than a publication step. Clone the
+repository and use the local installer when you want the CLI or MCP launchers
+on your machine.
 
 ## Safety Contract
 

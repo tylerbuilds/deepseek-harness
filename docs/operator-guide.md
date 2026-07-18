@@ -4,6 +4,10 @@ This harness is for fast, bounded DeepSeek batch inference with local evidence.
 It is not an approval system, repo applier, publisher, deployer, state writer or
 secret manager.
 
+The `v0.0.1` artefact is a GitHub/source release. `package.json` is intentionally
+private to npm; `npm run pack:check` is a local allowlist check only, not a
+publication workflow.
+
 ## Normal Route
 
 1. Write or choose a manifest with non-sensitive prompts.
@@ -104,9 +108,9 @@ node dist/src/cli.js plan artifacts/live-scale-ramp-approved.json --allow-live
 node dist/src/cli.js scale-ramp artifacts/live-scale-ramp-approved.json --concurrency 5,10,20 --items 40 --output artifacts/live-scale-ramp.json --allow-live --allow-live-scale
 ```
 
-The live 2026-07-06 ramp used `deepseek-v4-flash`, non-sensitive seed prompts,
-40 items per leg and a `0.25` USD manifest cap. It completed 120/120 items with
-no failed items.
+Do not copy local throughput numbers into release notes or operational claims.
+Record any machine- and manifest-specific measurements in the local artefact
+directory and review them separately from this source release.
 
 ## Evidence Exports
 

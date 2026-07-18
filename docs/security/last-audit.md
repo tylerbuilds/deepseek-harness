@@ -1,67 +1,68 @@
-# Security Audit Baseline - 2026-07-06
+# Security Audit Record — v0.0.1 source release — 2026-07-18
 
-## Verdict
+## Scope
 
-GO for public source visibility with documented caveats.
+This is a bounded source-release review for the local CLI/MCP harness. It is
+not a SaaS launch gate, penetration test or independent secret-scanner
+attestation. The runtime has no hosted backend, user accounts, payments,
+browser surface or customer database. DeepSeek egress exists only behind the
+documented approval, privacy, cost and side-effect gates.
 
-This is not a SaaS launch gate. The project is a public local CLI/MCP harness,
-with no auth, payments, hosted backend, user accounts, customer database or
-browser surface in the current `main` branch.
+The release is MIT-licensed and source-first. `package.json` remains private to
+npm, and the Rust workspace is not published. `npm run pack:check` verifies the
+explicit archive allowlist but does not publish an npm package.
 
-## Context
+## Checks
 
-- Phase: pre-release public repository.
-- Scale: developer/operator tool.
-- Markets: public GitHub source, no hosted service.
-- Data sensitivity: source code and local non-sensitive test manifests only.
-- Regulated industry: none in repo runtime.
-- External provider use: DeepSeek API only when explicitly approved and
-  configured by the operator.
-
-## Evidence Commands
+Run these checks from a clean checkout or release candidate:
 
 ```bash
+npm run typecheck
+npm test
+npm run test:e2e
+npm run mcp:smoke
+npm run pack:check
+cargo test --locked
 npm audit --audit-level=high
 npm ls --all --depth=2
-git ls-files | rg -n '(^artifacts/|^target/|^\\.state/|(^|/)\\.env|approval-packet|live-scale-ramp-approved|DEEPSEEK_API_KEY|sk-|gho_|api[_-]?key)' || true
-rg -n "TODO|unsafe|eval\\(|exec\\(|spawn\\(|Authorization|Bearer|DEEPSEEK_API_KEY|password|secret|token|key" src test examples docs README.md package.json agentos.service.yml || true
+git ls-files | rg -n '(^artifacts/|^target/|^\.state/|(^|/)\.env|approval-packet|live-scale-ramp-approved|DEEPSEEK_API_KEY|sk-|gho_|api[_-]?key)' || true
 ```
 
-Results:
+The audit and package checks report expected source references to
+`DEEPSEEK_API_KEY`, bearer construction and approval terminology. Those
+references document guarded behaviour; they are not credentials. Runtime
+state, artefacts, translation memory, environment files and internal review
+evidence are outside the source/package boundary.
 
-- `npm audit --audit-level=high`: passed, `0` vulnerabilities.
-- tracked-file secret/artefact scan: no matches for tracked artefacts, state,
-  env files, approval packets or obvious token patterns.
-- source keyword scan: expected references to `DEEPSEEK_API_KEY`, bearer auth
-  construction in the live transport, and documented no-secret policy.
-
-## Gate Table
+## Gate summary
 
 | Gate | Status | Notes |
 | --- | --- | --- |
-| Auth/session | PASS | No auth/session surface. |
-| Payments | PASS | No payments surface. |
-| Data privacy | PASS | No hosted user data store; sensitive egress blocked for live DeepSeek. |
-| Infrastructure | PASS | Local-only tool; no deploy target. |
-| Application security | WARN | Live transport exists; approval/egress/cost gates are present and tested. |
-| Supply chain | WARN | npm audit clean; Rust dependency review pending until PR #2 lands. |
-| Observability/IR | WARN | Public `SECURITY.md` added; no release process yet. |
-| Compliance/legal | WARN | Repository is public but has no explicit open-source licence on `main`. |
-| Abuse/fraud | PASS | No public hosted API or account creation. |
-| Business continuity | PASS | Source pushed to GitHub; local artefacts remain intentionally untracked. |
+| Auth/session | N/A | Local process; no hosted session surface. |
+| Payments | N/A | No payment or account surface. |
+| Data privacy | PASS | Sensitive egress is classified and blocked by the live gates. |
+| Infrastructure | PASS | No hosted deployment target is part of the harness. |
+| Application security | WARN | Live transport remains an explicit, separately approved path; keep the behavioural tests green. |
+| Supply chain | WARN | npm audit is clean; Rust advisory tools were unavailable in this environment. |
+| Observability/IR | REVIEWED | `SECURITY.md`, local artefacts and review exports define the available response trail. |
+| Compliance/legal | PASS | MIT licence is present and the release boundary is source-first/private npm. |
+| Abuse/fraud | N/A | No public hosted API or account creation. |
+| Business continuity | REVIEWED | Source and changelog are tracked; local runtime state is intentionally excluded. |
 
-## Risk Register
+## Risk register
 
 | ID | Severity | Status | Finding | Mitigation |
 | --- | --- | --- | --- | --- |
-| SEC-001 | MEDIUM | Open | No explicit open-source licence on `main`; public source is not reusable as open source until a licence is chosen. | Add `LICENSE` after maintainer chooses MIT, Apache-2.0 or another intended licence. |
-| SEC-002 | LOW | Mitigated | Live DeepSeek path could leak sensitive prompts or spend beyond a single manifest cap. | Live calls now require an owner-signed one-use receipt bound to the exact payload/model/egress/limits, an immediate outbound privacy re-scan, atomic run and daily budget reservation, and separate API-key/public-key configuration. Tests cover expiry, replay, tampering, mismatches and missing usage. |
-| SEC-003 | LOW | Open | No CI security gate yet. | Add GitHub Actions for npm audit, tests, Rust tests once Rust PR lands, and public-safety scans. |
+| SEC-001 | MEDIUM | Mitigated | Public source requires an explicit licence and release boundary. | Root `LICENSE`, npm `license: MIT`, Rust `license = "MIT"`, and source-only/private npm wording are aligned. |
+| SEC-002 | LOW | Mitigated | A live provider call could expose sensitive prompts or exceed a cost limit if gates were bypassed. | One-use payload-bound receipts, privacy/egress checks, API-key environment loading, atomic run/budget reservations and live flags are required. |
+| SEC-003 | LOW | Open | No Rust advisory database tool was available during this review. | Run `cargo audit` or `cargo deny check` in CI/release infrastructure and record the result. |
+| SEC-004 | LOW | Mitigated | Generated tests, state and private material must not enter the archive. | The package uses explicit file entries and `npm run pack:check` rejects undeclared paths. |
 
-## Follow-Up
+## Follow-up
 
-- Choose and add an explicit licence.
-- Add CI for tests and audit commands.
-- Re-run dependency audit after PR #2 adds Rust dependencies to `main`.
-- Add conformance tests before Rust gains live DeepSeek or SQLite write
-  authority.
+- Keep the listed Node, Rust, package and behavioural checks in CI for future
+  release candidates.
+- Re-run this record when dependencies, live transport authority or the package
+  allowlist changes.
+- Treat local live-run measurements as operator artefacts, not maintainer or
+  release claims.

@@ -6,6 +6,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { buildOcrCorpusManifest, extractOcrShard } from "../src/corpus_ocr.js";
 
+process.env.DEEPSEEK_HARNESS_INPUT_ROOT = os.tmpdir();
+
 const TEST_COMMAND_TIMEOUT_MS = 30_000;
 const TEST_MAX_BUFFER_BYTES = 4 * 1024 * 1024;
 

@@ -1,8 +1,8 @@
 import fs from "node:fs";
-import path from "node:path";
 import { createHash } from "node:crypto";
 import { TextDecoder } from "node:util";
 import { HarnessError } from "./errors.js";
+import { assertSafeCorpusSourcePath } from "./paths.js";
 
 export type AuthoringPrivacyLane = "local_only" | "external_inference_allowed" | "redacted_external_allowed";
 
@@ -377,7 +377,7 @@ function normalisePrivacyLane(input: BuildAuthoringProcessorInput): AuthoringPri
 
 function readUtf8Source(sourcePath: string | undefined, kind: "book" | "outline"): ReadSource {
   const value = requiredText(sourcePath, kind === "book" ? "sourcePath" : "outlinePath");
-  const resolvedPath = path.resolve(value);
+  const resolvedPath = assertSafeCorpusSourcePath(value);
   let bytes: Buffer;
   try {
     const stats = fs.statSync(resolvedPath);

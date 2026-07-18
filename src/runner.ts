@@ -4,7 +4,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { observedUsageCost } from "./budget.js";
 import { buildCostLedger } from "./cost.js";
 import { HarnessError } from "./errors.js";
-import { defaultArtifactRoot, defaultStateDir, resolveArtifactOutputPath } from "./paths.js";
+import {
+  defaultArtifactRoot,
+  defaultCorpusInputRoot,
+  defaultStateDir,
+  resolveArtifactOutputPath
+} from "./paths.js";
 import { classifyManifestPrivacy } from "./privacy.js";
 import { HarnessStore, type ItemRecord } from "./store.js";
 import {
@@ -76,6 +81,7 @@ export interface McpConfigOptions {
   command?: string;
   stateDir?: string;
   artifactDir?: string;
+  inputRoot?: string;
 }
 
 export function createStore(context: HarnessContext = {}): HarnessStore {
@@ -91,6 +97,7 @@ export function doctor(context: HarnessContext = {}): Record<string, unknown> {
       state_dir: store.stateDir,
       db_path: store.dbPath,
       cwd: process.cwd(),
+      corpus_input_root: defaultCorpusInputRoot(),
       cli: {
         source_entrypoint: path.resolve(process.cwd(), "dist/src/cli.js"),
         mcp_entrypoint: path.resolve(process.cwd(), "dist/src/mcp.js")
@@ -115,6 +122,7 @@ export function mcpConfig(options: McpConfigOptions = {}): Record<string, unknow
   const artifactDir = path.resolve(
     options.artifactDir ?? process.env.DEEPSEEK_HARNESS_ARTIFACT_DIR ?? path.join(process.cwd(), "artifacts")
   );
+  const inputRoot = path.resolve(options.inputRoot ?? defaultCorpusInputRoot());
 
   return {
     mcpServers: {
@@ -123,7 +131,8 @@ export function mcpConfig(options: McpConfigOptions = {}): Record<string, unknow
         args,
         env: {
           DEEPSEEK_HARNESS_STATE_DIR: stateDir,
-          DEEPSEEK_HARNESS_ARTIFACT_DIR: artifactDir
+          DEEPSEEK_HARNESS_ARTIFACT_DIR: artifactDir,
+          DEEPSEEK_HARNESS_INPUT_ROOT: inputRoot
         }
       }
     }
@@ -150,6 +159,7 @@ export function mcpConfigToml(options: McpConfigOptions = {}): string {
     "[mcp_servers.deepseek-harness.env]",
     `DEEPSEEK_HARNESS_STATE_DIR = ${tomlString(server.env.DEEPSEEK_HARNESS_STATE_DIR)}`,
     `DEEPSEEK_HARNESS_ARTIFACT_DIR = ${tomlString(server.env.DEEPSEEK_HARNESS_ARTIFACT_DIR)}`,
+    `DEEPSEEK_HARNESS_INPUT_ROOT = ${tomlString(server.env.DEEPSEEK_HARNESS_INPUT_ROOT)}`,
     ""
   ].join("\n");
 }

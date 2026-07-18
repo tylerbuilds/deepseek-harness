@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { HarnessError } from "./errors.js";
+import { assertSafeCorpusSourcePath } from "./paths.js";
 
 export type MediaCorpusPrivacyLane = "local_only" | "external_inference_allowed" | "redacted_external_allowed";
 
@@ -101,7 +102,7 @@ const STREAM_FIELDS = [
 export function buildMediaCorpusManifest(input: BuildMediaCorpusManifestInput): MediaCorpusManifest {
   validateInput(input);
 
-  const declaredSourcePath = path.resolve(input.sourcePath);
+  const declaredSourcePath = assertSafeCorpusSourcePath(input.sourcePath);
   const sourceStat = lstatOrThrow(declaredSourcePath, "media_source_missing", "Media source path does not exist");
   if (sourceStat.isSymbolicLink()) {
     throw new HarnessError("media_source_symlink", "Media source path must not be a symlink", { source_path: input.sourcePath });
