@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::Semaphore;
 
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
+
 #[derive(Debug, Parser)]
 #[command(about = "Rust worker core for DeepSeek Harness fake batch execution")]
 struct Args {
@@ -181,8 +184,13 @@ fn confined_input_file(root: &Path, candidate: &Path) -> Result<PathBuf> {
     };
     let canonical = fs::canonicalize(&resolved)
         .with_context(|| format!("failed to resolve manifest {}", candidate.display()))?;
-    if !canonical.starts_with(root) || !fs::metadata(&canonical)?.is_file() {
+    let metadata = fs::metadata(&canonical)?;
+    if !canonical.starts_with(root) || !metadata.is_file() {
         bail!("manifest must be a regular file beneath --input-root");
+    }
+    #[cfg(unix)]
+    if metadata.nlink() > 1 {
+        bail!("manifest must not be a hard-linked regular file");
     }
     Ok(canonical)
 }
@@ -445,12 +453,18 @@ mod tests {
         fs::create_dir_all(&input_root).unwrap();
         fs::write(input_root.join("manifest.json"), "{}").unwrap();
         fs::write(root.join("outside.json"), "{}").unwrap();
+        fs::hard_link(
+            root.join("outside.json"),
+            input_root.join("linked-manifest.json"),
+        )
+        .unwrap();
 
         let canonical_input = canonical_directory(&input_root, "input root", false).unwrap();
         let canonical_artifact =
             canonical_directory(&artifact_root, "artifact root", true).unwrap();
         assert!(confined_input_file(&canonical_input, Path::new("manifest.json")).is_ok());
         assert!(confined_input_file(&canonical_input, &root.join("outside.json")).is_err());
+        assert!(confined_input_file(&canonical_input, Path::new("linked-manifest.json")).is_err());
         assert!(confined_output_path(&canonical_artifact, Path::new("nested/report.json")).is_ok());
         assert!(confined_output_path(&canonical_artifact, Path::new("../outside.json")).is_err());
 
