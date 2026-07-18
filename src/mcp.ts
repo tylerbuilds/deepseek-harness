@@ -192,6 +192,17 @@ const capabilitiesOutputSchema = {
     description: z.string(),
     tool_groups: z.array(z.string())
   })),
+  model_strategy: z.object({
+    provider: z.literal("deepseek"),
+    generation: z.literal("v4"),
+    default_model: z.literal("deepseek-v4-flash"),
+    escalation_model: z.literal("deepseek-v4-pro"),
+    thinking_default: z.literal("enabled"),
+    reasoning_effort_default: z.literal("high"),
+    reasoning_effort_escalation: z.literal("max"),
+    routing_policy: z.string(),
+    comparison_command: z.string()
+  }),
   safety_defaults: z.object({
     live_calls: z.string(),
     external_side_effects: z.boolean(),

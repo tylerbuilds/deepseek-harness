@@ -40,6 +40,17 @@ export function productCapabilities(profile: McpProfile = "full"): Record<string
     },
     active_mcp_profile: profile,
     mcp_profiles: MCP_PROFILES,
+    model_strategy: {
+      provider: "deepseek",
+      generation: "v4",
+      default_model: "deepseek-v4-flash",
+      escalation_model: "deepseek-v4-pro",
+      thinking_default: "enabled",
+      reasoning_effort_default: "high",
+      reasoning_effort_escalation: "max",
+      routing_policy: "Start high-volume lanes on Flash; benchmark or escalate complex synthesis and review to Pro.",
+      comparison_command: "deepseek-harness compare-models MANIFEST --models deepseek-v4-flash,deepseek-v4-pro"
+    },
     safety_defaults: {
       live_calls: "disabled",
       external_side_effects: false,

@@ -18,13 +18,14 @@ export function usageError(
   suggestion: string,
   nextActions: string[] = [suggestion]
 ): HarnessError {
+  const uniqueNextActions = [...new Set(nextActions)];
   return new HarnessError(
     code,
     message,
     {
       recoverable: true,
       suggestion,
-      next_actions: nextActions
+      next_actions: uniqueNextActions
     },
     2
   );

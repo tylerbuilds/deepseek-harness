@@ -42,6 +42,11 @@ test("version and capabilities are deterministic discovery surfaces", async () =
   const capabilities = JSON.parse(first.stdout) as {
     ok: boolean;
     active_mcp_profile: string;
+    model_strategy: {
+      default_model: string;
+      escalation_model: string;
+      comparison_command: string;
+    };
     workflows: Array<{ id: string }>;
     exit_codes: Record<string, string>;
   };
@@ -50,6 +55,9 @@ test("version and capabilities are deterministic discovery surfaces", async () =
   assert.equal(first.stdout, second.stdout);
   assert.equal(capabilities.ok, true);
   assert.equal(capabilities.active_mcp_profile, "full");
+  assert.equal(capabilities.model_strategy.default_model, "deepseek-v4-flash");
+  assert.equal(capabilities.model_strategy.escalation_model, "deepseek-v4-pro");
+  assert.match(capabilities.model_strategy.comparison_command, /compare-models/);
   assert.equal(capabilities.workflows.some((workflow) => workflow.id === "prove_local_setup"), true);
   assert.equal(capabilities.exit_codes["2"], "invalid command, flag, or input");
 });
@@ -120,6 +128,19 @@ test("mistyped and incomplete commands return structured recovery with exit code
       assert.equal(failure.code, 2);
       assert.equal(payload.code, "missing_argument");
       assert.equal(payload.details?.suggestion, "deepseek-harness help");
+      return true;
+    }
+  );
+
+  await assert.rejects(
+    runCli(["submit", "examples/basic-run.json", "--enqueue-onyl"]),
+    (error: unknown) => {
+      const failure = error as { code?: number; stderr?: string };
+      const payload = JSON.parse(failure.stderr ?? "{}") as {
+        details?: { next_actions?: string[] };
+      };
+      assert.equal(failure.code, 2);
+      assert.deepEqual(payload.details?.next_actions, ["deepseek-harness submit --help"]);
       return true;
     }
   );

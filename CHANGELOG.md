@@ -21,6 +21,8 @@ protected release workflow after the `v0.1.0` tag is reviewed.
   tarball.
 - Product onboarding for `quickstart`, `capabilities`, and the `core`,
   `corpus`, and `full` MCP profiles.
+- A machine-readable DeepSeek V4 routing strategy: Flash for default throughput,
+  Pro for bounded escalation, and an explicit comparison path for Cockpit clients.
 - A self-contained source installation with verify, repair/upgrade and
   ownership-safe uninstall modes that preserve local state and artefacts.
 - MCP tool annotations, structured discovery responses and protocol-level

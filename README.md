@@ -58,6 +58,25 @@ npm install --global deepseek-harness@0.1.0
 npx --yes deepseek-harness@0.1.0 quickstart
 ```
 
+## DeepSeek V4 strategy
+
+The harness is V4-native. `deepseek-v4-flash` is the default high-throughput
+lane; `deepseek-v4-pro` is the explicit escalation lane for harder synthesis,
+reasoning and review. Thinking mode defaults to enabled, with `high` reasoning
+for ordinary runs and `max` available for the hardest bounded work.
+
+Agents can discover this routing policy through `deepseek-harness capabilities`
+or `deepseek_harness_capabilities`. Compare both models without granting live
+authority first:
+
+```bash
+deepseek-harness compare-models MANIFEST --models deepseek-v4-flash,deepseek-v4-pro
+```
+
+This machine-readable model strategy is also the contract for a future DeepSeek
+Cockpit: the UI can visualise lanes, throughput, budgets, approvals and review
+artefacts without becoming a second execution engine.
+
 ## Safety Contract
 
 The harness may prepare and run batch inference artefacts. It must not write
