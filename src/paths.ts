@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { HarnessError } from "./errors.js";
 
@@ -121,11 +122,70 @@ export function writeArtifactOutput(
   }
 
   const finalPath = path.join(realParent, path.basename(output));
+  const temporaryPath = path.join(realParent, `.${path.basename(output)}.${randomUUID()}.tmp`);
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(
+      temporaryPath,
+      fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW,
+      0o600
+    );
+    if (!fs.fstatSync(fd).isFile()) {
+      throw new HarnessError("artifact_output_path_blocked", "Harness output must be a regular file");
+    }
+    fs.writeFileSync(fd, body);
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = undefined;
+    const currentParent = fs.realpathSync(parent);
+    if (currentParent !== realParent || !isWithin(currentParent, realRoot)) {
+      throw new HarnessError("artifact_output_path_blocked", "Harness output directory changed during write");
+    }
+    fs.renameSync(temporaryPath, finalPath);
+    fsyncDirectory(realParent);
+    return output;
+  } catch (error) {
+    if (error instanceof HarnessError) {
+      throw error;
+    }
+    throw new HarnessError("artifact_output_path_blocked", "Harness output path could not be opened safely");
+  } finally {
+    if (fd !== undefined) {
+      fs.closeSync(fd);
+    }
+    try {
+      fs.unlinkSync(temporaryPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+}
+
+export function writeArtifactOutputNoClobber(artifactRoot: string, candidate: string, body: string): string {
+  const output = resolveArtifactOutputPath(artifactRoot, candidate);
+  const root = path.resolve(artifactRoot);
+  const parent = path.dirname(output);
+  let realRoot: string;
+  let realParent: string;
+  try {
+    fs.mkdirSync(parent, { recursive: true });
+    realRoot = fs.realpathSync(root);
+    realParent = fs.realpathSync(parent);
+  } catch {
+    throw new HarnessError("artifact_output_path_blocked", "Configured artifact output directory is not writable");
+  }
+  if (!isWithin(realParent, realRoot)) {
+    throw new HarnessError("artifact_output_path_blocked", "Harness output resolves outside the configured artifact root");
+  }
+
+  const finalPath = path.join(realParent, path.basename(output));
   let fd: number | undefined;
   try {
     fd = fs.openSync(
       finalPath,
-      fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW,
+      fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW,
       0o600
     );
     if (!fs.fstatSync(fd).isFile()) {
@@ -138,10 +198,33 @@ export function writeArtifactOutput(
     if (error instanceof HarnessError) {
       throw error;
     }
-    throw new HarnessError("artifact_output_path_blocked", "Harness output path could not be opened safely");
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      throw new HarnessError("artifact_output_path_blocked", "Harness output path could not be opened safely");
+    }
   } finally {
     if (fd !== undefined) {
       fs.closeSync(fd);
+    }
+  }
+
+  let existingFd: number | undefined;
+  try {
+    existingFd = fs.openSync(finalPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    if (!fs.fstatSync(existingFd).isFile()) {
+      throw new HarnessError("artifact_output_path_blocked", "Harness output must be a regular file");
+    }
+    if (fs.readFileSync(existingFd, "utf8") !== body) {
+      throw new HarnessError("artifact_output_exists", `Refusing to overwrite existing harness output: ${output}`);
+    }
+    return output;
+  } catch (error) {
+    if (error instanceof HarnessError) {
+      throw error;
+    }
+    throw new HarnessError("artifact_output_path_blocked", "Harness output path could not be opened safely");
+  } finally {
+    if (existingFd !== undefined) {
+      fs.closeSync(existingFd);
     }
   }
 }
@@ -230,4 +313,13 @@ function inspectExistingPath(
 function isWithin(candidate: string, root: string): boolean {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function fsyncDirectory(directory: string): void {
+  const fd = fs.openSync(directory, "r");
+  try {
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
 }

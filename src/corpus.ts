@@ -7,7 +7,7 @@ import { TextDecoder } from "node:util";
 import { z } from "zod";
 import { canonicalJson } from "./approval.js";
 import { HarnessError } from "./errors.js";
-import { assertSafeCorpusSourcePath, defaultArtifactRoot } from "./paths.js";
+import { assertSafeCorpusSourcePath, defaultArtifactRoot, writeArtifactOutputNoClobber } from "./paths.js";
 import { approvalPacket, getResults, planManifest, submitManifest } from "./runner.js";
 import { approvalReceiptSchema, modelSchema, thinkingSchema, type RunManifest } from "./schema.js";
 import { validateCorpusWorkload } from "./corpus_validation.js";
@@ -410,9 +410,7 @@ export function corpusApprovalPacket(
     return { ok: true, packet };
   }
 
-  const outputPath = safeArtifactFile(options.output, artifactDir);
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  writeNoClobber(outputPath, `${JSON.stringify(packet, null, 2)}\n`);
+  const outputPath = writeArtifactOutputNoClobber(artifactDir, options.output, `${JSON.stringify(packet, null, 2)}\n`);
   return { ok: true, path: outputPath, packet };
 }
 
@@ -2634,17 +2632,6 @@ function writeBufferFully(fd: number, buffer: Buffer): void {
     }
     offset += written;
   }
-}
-
-function writeNoClobber(filePath: string, content: string): void {
-  if (fs.existsSync(filePath)) {
-    const existing = fs.readFileSync(filePath, "utf8");
-    if (existing !== content) {
-      throw new HarnessError("corpus_output_exists", `Refusing to overwrite existing corpus output: ${filePath}`);
-    }
-    return;
-  }
-  fs.writeFileSync(filePath, content);
 }
 
 function writeShardArtifactNoClobber(

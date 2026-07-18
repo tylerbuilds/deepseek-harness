@@ -103,7 +103,7 @@ node dist/src/cli.js corpus reconcile <job_id> --artifact-dir artifacts/corpus/<
 node dist/src/cli.js corpus cancel <job_id> --artifact-dir artifacts/corpus/<job_id>
 node dist/src/cli.js corpus translation-review-packet <job_id> --artifact-dir artifacts/corpus/<job_id>
 node dist/src/cli.js corpus commit-translation-memory <job_id> --artifact-dir artifacts/corpus/<job_id> --review-receipt /secure/path/review-receipt.json
-cargo run -p deepseek-harness-worker -- --manifest examples/basic-run.json --transport fake --concurrency 4 --output artifacts/rust-worker-basic-run.json
+cargo run -p deepseek-harness-worker -- --manifest examples/basic-run.json --transport fake --concurrency 4 --output rust-worker-basic-run.json
 ```
 
 The default example uses the fake transport and performs no network calls.

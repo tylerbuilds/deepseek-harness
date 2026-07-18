@@ -45,6 +45,22 @@ test("builds a corpus-bound DeepSeek approval packet without granting authority"
   assert.equal(result.packet.data_egress.item_count, 1);
 });
 
+test("refuses an approval-packet output symlink outside the artefact root", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "deepseek-harness-corpus-approval-"));
+  const artifactDir = path.join(root, "corpus", "approval-job");
+  const outputPath = path.join(artifactDir, "packet.json");
+  const outsidePath = path.join(root, "outside.json");
+  process.env.DEEPSEEK_HARNESS_ARTIFACT_DIR = root;
+  fs.mkdirSync(artifactDir, { recursive: true });
+  fs.symlinkSync(outsidePath, outputPath);
+
+  assert.throws(
+    () => corpusApprovalPacket(approvalManifest(artifactDir), { output: outputPath }),
+    /Harness output path contains a dangling symlink/
+  );
+  assert.equal(fs.existsSync(outsidePath), false);
+});
+
 test("rejects approval packets for local processors", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "deepseek-harness-corpus-approval-"));
   process.env.DEEPSEEK_HARNESS_ARTIFACT_DIR = root;
@@ -121,3 +137,32 @@ test("rejects prompt templates that duplicate shard text", () => {
     /Corpus manifest failed validation/
   );
 });
+
+function approvalManifest(artifactDir: string): Record<string, unknown> {
+  return {
+    schema_version: "deepseek-harness.corpus.v1",
+    job_id: "approval-job",
+    project: "corpus-approval",
+    workload_type: "translation",
+    privacy_lane: "external_inference_allowed",
+    artifact_dir: artifactDir,
+    processor: {
+      type: "deepseek_batch",
+      transport: "deepseek",
+      model: "deepseek-v4-flash",
+      thinking: { type: "enabled" },
+      response_format: "text",
+      prompt_template: "Translate: {{text}}",
+      concurrency: 2,
+      cost_cap_usd: 0.2,
+      max_tokens: 200
+    },
+    sources: [{ id: "source:one", type: "text" }],
+    shards: [{
+      id: "source:one:chunk:1",
+      source_id: "source:one",
+      inline_text: "Hello",
+      bounds: { source_lang: "en", target_lang: "fr", chunk_index: 0 }
+    }]
+  };
+}

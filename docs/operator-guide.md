@@ -30,7 +30,7 @@ node dist/src/cli.js agent-canary --output artifacts/agent-canary.json
 node dist/src/cli.js workload-benchmark --workload classification --items 12 --concurrency 4 --output artifacts/workload-benchmark.json
 node dist/src/cli.js failure-canary --output artifacts/failure-canary.json
 node dist/src/cli.js scale-ramp examples/basic-run.json --concurrency 5,10,20 --items 40 --output artifacts/scale-ramp-local.json
-cargo run -p deepseek-harness-worker -- --manifest examples/basic-run.json --transport fake --concurrency 4 --output artifacts/rust-worker-basic-run.json
+cargo run -p deepseek-harness-worker -- --manifest examples/basic-run.json --transport fake --concurrency 4 --output rust-worker-basic-run.json
 bash scripts/install-local.sh --install-dir "$HOME/bin" --print-config
 npm run mcp:smoke -- --command "$HOME/bin/deepseek-harness-mcp"
 ```

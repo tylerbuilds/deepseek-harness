@@ -1,6 +1,8 @@
 use std::{
     collections::BTreeMap,
-    path::PathBuf,
+    fs::{self, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -17,6 +19,9 @@ struct Args {
     #[arg(long)]
     manifest: PathBuf,
 
+    #[arg(long, default_value = ".")]
+    input_root: PathBuf,
+
     #[arg(long, default_value = "fake")]
     transport: Transport,
 
@@ -25,6 +30,9 @@ struct Args {
 
     #[arg(long)]
     output: Option<PathBuf>,
+
+    #[arg(long, default_value = "artifacts")]
+    artifact_root: PathBuf,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, clap::ValueEnum)]
@@ -118,7 +126,10 @@ struct ItemReport {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let manifest = load_manifest(&args.manifest)?;
+    let input_root = canonical_directory(&args.input_root, "input root", false)?;
+    let artifact_root = canonical_directory(&args.artifact_root, "artifact root", true)?;
+    let manifest_path = confined_input_file(&input_root, &args.manifest)?;
+    let manifest = load_manifest(&manifest_path)?;
     validate_manifest(&manifest, args.transport)?;
 
     let concurrency = args.concurrency.unwrap_or(manifest.concurrency);
@@ -130,13 +141,8 @@ async fn main() -> Result<()> {
     let report_json = serde_json::to_string_pretty(&report)?;
 
     if let Some(output) = args.output {
-        if let Some(parent) = output.parent() {
-            std::fs::create_dir_all(parent).with_context(|| {
-                format!("failed to create output directory {}", parent.display())
-            })?;
-        }
-        std::fs::write(&output, report_json)
-            .with_context(|| format!("failed to write worker report {}", output.display()))?;
+        let output_path = confined_output_path(&artifact_root, &output)?;
+        write_report(&output_path, &report_json)?;
     } else {
         println!("{report_json}");
     }
@@ -144,11 +150,93 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn load_manifest(path: &PathBuf) -> Result<Manifest> {
-    let raw = std::fs::read_to_string(path)
+fn load_manifest(path: &Path) -> Result<Manifest> {
+    let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read manifest {}", path.display()))?;
     serde_json::from_str(&raw)
         .with_context(|| format!("failed to parse manifest {}", path.display()))
+}
+
+fn canonical_directory(path: &Path, label: &str, create: bool) -> Result<PathBuf> {
+    if create {
+        fs::create_dir_all(path)
+            .with_context(|| format!("failed to create {label} {}", path.display()))?;
+    }
+    let canonical = fs::canonicalize(path)
+        .with_context(|| format!("failed to resolve {label} {}", path.display()))?;
+    if !fs::metadata(&canonical)?.is_dir() {
+        bail!("{label} must be an existing directory");
+    }
+    if canonical.parent().is_none() {
+        bail!("{label} must be narrower than the filesystem root");
+    }
+    Ok(canonical)
+}
+
+fn confined_input_file(root: &Path, candidate: &Path) -> Result<PathBuf> {
+    let resolved = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        root.join(candidate)
+    };
+    let canonical = fs::canonicalize(&resolved)
+        .with_context(|| format!("failed to resolve manifest {}", candidate.display()))?;
+    if !canonical.starts_with(root) || !fs::metadata(&canonical)?.is_file() {
+        bail!("manifest must be a regular file beneath --input-root");
+    }
+    Ok(canonical)
+}
+
+fn confined_output_path(root: &Path, candidate: &Path) -> Result<PathBuf> {
+    if candidate.is_absolute()
+        || candidate.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
+    {
+        bail!("output must be a relative path beneath --artifact-root");
+    }
+    let file_name = candidate.file_name().context("output must name a file")?;
+    let output = root.join(candidate);
+    let parent = output
+        .parent()
+        .context("output must have a parent directory")?;
+    fs::create_dir_all(parent)
+        .with_context(|| format!("failed to create output directory {}", parent.display()))?;
+    let canonical_parent = fs::canonicalize(parent)
+        .with_context(|| format!("failed to resolve output directory {}", parent.display()))?;
+    if !canonical_parent.starts_with(root) {
+        bail!("output must remain beneath --artifact-root");
+    }
+    let final_path = canonical_parent.join(file_name);
+    match fs::symlink_metadata(&final_path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => bail!("output must not be a symlink"),
+        Ok(_) => bail!(
+            "refusing to overwrite existing output {}",
+            final_path.display()
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(final_path),
+        Err(error) => {
+            Err(error).with_context(|| format!("failed to inspect output {}", final_path.display()))
+        }
+    }
+}
+
+fn write_report(output: &Path, report_json: &str) -> Result<()> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output)
+        .with_context(|| format!("failed to create worker report {}", output.display()))?;
+    file.write_all(report_json.as_bytes())
+        .with_context(|| format!("failed to write worker report {}", output.display()))?;
+    file.sync_all()
+        .with_context(|| format!("failed to sync worker report {}", output.display()))?;
+    Ok(())
 }
 
 fn validate_manifest(manifest: &Manifest, transport: Transport) -> Result<()> {
@@ -343,6 +431,30 @@ mod tests {
     #[test]
     fn validates_fake_manifest() {
         assert!(validate_manifest(&manifest(), Transport::Fake).is_ok());
+    }
+
+    #[test]
+    fn confines_manifest_and_output_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "deepseek-harness-worker-paths-{}-{}",
+            std::process::id(),
+            now_unix_ms()
+        ));
+        let input_root = root.join("input");
+        let artifact_root = root.join("artifacts");
+        fs::create_dir_all(&input_root).unwrap();
+        fs::write(input_root.join("manifest.json"), "{}").unwrap();
+        fs::write(root.join("outside.json"), "{}").unwrap();
+
+        let canonical_input = canonical_directory(&input_root, "input root", false).unwrap();
+        let canonical_artifact =
+            canonical_directory(&artifact_root, "artifact root", true).unwrap();
+        assert!(confined_input_file(&canonical_input, Path::new("manifest.json")).is_ok());
+        assert!(confined_input_file(&canonical_input, &root.join("outside.json")).is_err());
+        assert!(confined_output_path(&canonical_artifact, Path::new("nested/report.json")).is_ok());
+        assert!(confined_output_path(&canonical_artifact, Path::new("../outside.json")).is_err());
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
