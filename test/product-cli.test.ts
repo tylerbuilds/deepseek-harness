@@ -11,6 +11,7 @@ const execFileAsync = promisify(execFile);
 function isolatedEnv(root: string): NodeJS.ProcessEnv {
   return {
     ...process.env,
+    DEEPSEEK_API_KEY: "",
     DEEPSEEK_HARNESS_STATE_DIR: path.join(root, ".state"),
     DEEPSEEK_HARNESS_ARTIFACT_DIR: path.join(root, "artifacts"),
     DEEPSEEK_HARNESS_INPUT_ROOT: root
@@ -42,6 +43,7 @@ test("version and capabilities are deterministic discovery surfaces", async () =
   const capabilities = JSON.parse(first.stdout) as {
     ok: boolean;
     active_mcp_profile: string;
+    product: { interfaces: string[] };
     model_strategy: {
       default_model: string;
       escalation_model: string;
@@ -55,11 +57,56 @@ test("version and capabilities are deterministic discovery surfaces", async () =
   assert.equal(first.stdout, second.stdout);
   assert.equal(capabilities.ok, true);
   assert.equal(capabilities.active_mcp_profile, "full");
+  assert.equal(capabilities.product.interfaces.includes("tui"), true);
+  assert.equal(capabilities.product.interfaces.includes("headless_exec"), true);
   assert.equal(capabilities.model_strategy.default_model, "deepseek-v4-flash");
   assert.equal(capabilities.model_strategy.escalation_model, "deepseek-v4-pro");
   assert.match(capabilities.model_strategy.comparison_command, /compare-models/);
   assert.equal(capabilities.workflows.some((workflow) => workflow.id === "prove_local_setup"), true);
   assert.equal(capabilities.exit_codes["2"], "invalid command, flag, or input");
+});
+
+test("forced TUI fails clearly when stdio is not a terminal", async () => {
+  // Given / When / Then
+  await assert.rejects(
+    runCli(["chat", "--tui"]),
+    (error: unknown) => {
+      const failure = error as { code?: number; stderr?: string };
+      const payload = JSON.parse(failure.stderr ?? "{}") as { code?: string; message?: string };
+      assert.equal(failure.code, 2);
+      assert.equal(payload.code, "tui_requires_tty");
+      assert.match(payload.message ?? "", /requires a TTY/);
+      return true;
+    },
+  );
+});
+
+test("chat mode flags are mutually exclusive", async () => {
+  // Given / When / Then
+  await assert.rejects(
+    runCli(["chat", "--plain", "--tui"]),
+    (error: unknown) => {
+      const failure = error as { code?: number; stderr?: string };
+      const payload = JSON.parse(failure.stderr ?? "{}") as { code?: string };
+      assert.equal(failure.code, 2);
+      assert.equal(payload.code, "invalid_chat_mode");
+      return true;
+    },
+  );
+});
+
+test("one-shot chat failures propagate as a non-zero structured error", async () => {
+  // Given / When / Then
+  await assert.rejects(
+    runCli(["chat", "status", "--plain"]),
+    (error: unknown) => {
+      const failure = error as { code?: number; stderr?: string };
+      const payload = JSON.parse(failure.stderr ?? "{}") as { code?: string };
+      assert.equal(failure.code, 3);
+      assert.equal(payload.code, "deepseek_api_key_not_present");
+      return true;
+    },
+  );
 });
 
 test("quickstart proves the local product without a network call", async () => {

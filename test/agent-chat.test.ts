@@ -15,6 +15,16 @@ function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "deepseek-harness-chat-"));
 }
 
+function approvedToolRegistry() {
+  const registry = createToolRegistry();
+  registry.setTier2Gate({
+    async check() {
+      return { allowed: true, scope: "once" };
+    },
+  });
+  return registry;
+}
+
 test("session creates and persists messages", () => {
   const stateDir = tempDir();
   const store = new HarnessStore(stateDir);
@@ -66,6 +76,41 @@ test("buildContext assembles system prompt, pinned files, and history", () => {
   }
 });
 
+test("buildContext never splits a tool-call turn at the recent-history boundary", () => {
+  const stateDir = tempDir();
+  const store = new HarnessStore(stateDir);
+  try {
+    const session = createSession(store, tempDir(), "deepseek-v4-flash");
+    for (let i = 0; i < 5; i++) {
+      addUserMessage(session, `old-${i}`);
+    }
+    addUserMessage(session, "tool turn starts here");
+    addAssistantMessage(session, "", [
+      { id: "call_boundary", type: "function", function: { name: "read_file", arguments: "{}" } },
+    ], 1, "Need the file.");
+    addToolResult(session, "call_boundary", "contents");
+    addAssistantMessage(session, "finished", null, 1, "Done.");
+    for (let i = 0; i < 23; i++) {
+      addUserMessage(session, `new-${i}`);
+    }
+
+    const ctx = buildContext(session);
+    const history = ctx.messages.filter((message) => message.role !== "system");
+    const startIndex = history.findIndex((message) => message.content === "tool turn starts here");
+
+    assert.equal(ctx.summarised, true);
+    assert.ok(startIndex >= 0);
+    assert.deepEqual(
+      history.slice(startIndex, startIndex + 4).map((message) => message.role),
+      ["user", "assistant", "tool", "assistant"],
+    );
+    assert.equal(history[startIndex + 1].reasoning_content, "Need the file.");
+    assert.ok(ctx.messages.some((message) => message.content?.includes("earlier messages were omitted")));
+  } finally {
+    store.close();
+  }
+});
+
 test("tool registry describes all 8 tools with correct names", () => {
   const registry = createToolRegistry();
   const described = registry.describe();
@@ -96,7 +141,7 @@ test("read_file tool works", async () => {
 });
 
 test("write_file tool creates file", async () => {
-  const registry = createToolRegistry();
+  const registry = approvedToolRegistry();
   const dir = tempDir();
   const filePath = path.join(dir, "nested", "out.txt");
 
@@ -106,7 +151,7 @@ test("write_file tool creates file", async () => {
 });
 
 test("edit_file replaces text", async () => {
-  const registry = createToolRegistry();
+  const registry = approvedToolRegistry();
   const dir = tempDir();
   const filePath = path.join(dir, "edit.txt");
   fs.writeFileSync(filePath, "const A = 1;\nconst B = 2;\n", "utf8");

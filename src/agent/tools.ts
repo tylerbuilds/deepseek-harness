@@ -43,14 +43,41 @@ export interface ToolResult {
   error?: string;
 }
 
+export interface ToolApprovalRequest {
+  toolName: string;
+  params: Record<string, unknown>;
+}
+
+export type ToolApprovalScope = "once" | "session";
+
+export interface Tier2Decision {
+  allowed: boolean;
+  reason?: string;
+  scope?: ToolApprovalScope;
+}
+
+export interface ToolExecutionOptions {
+  signal?: AbortSignal;
+}
+
+function executionSignal(options: AbortSignal | ToolExecutionOptions | undefined): AbortSignal | undefined {
+  if (!options) return undefined;
+  if (isToolExecutionOptions(options)) return options.signal;
+  return options;
+}
+
+function isToolExecutionOptions(value: AbortSignal | ToolExecutionOptions): value is ToolExecutionOptions {
+  return "signal" in value;
+}
+
 export interface Tool {
   definition: ToolDefinition;
   tier: 1 | 2;
-  execute(params: Record<string, unknown>, cwd: string): Promise<ToolResult>;
+  execute(params: Record<string, unknown>, cwd: string, signal?: AbortSignal): Promise<ToolResult>;
 }
 
 export interface Tier2Gate {
-  check(toolName: string, params: Record<string, unknown>): Promise<{ allowed: boolean; reason?: string }>;
+  check(toolName: string, params: Record<string, unknown>): Promise<Tier2Decision>;
 }
 
 export class ToolRegistry {
@@ -88,10 +115,24 @@ export class ToolRegistry {
       .join("\n");
   }
 
-  async execute(name: string, params: Record<string, unknown>, cwd: string): Promise<ToolResult> {
+  async execute(
+    name: string,
+    params: Record<string, unknown>,
+    cwd: string,
+    options?: AbortSignal | ToolExecutionOptions,
+  ): Promise<ToolResult> {
     const tool = this.tools.get(name);
     if (!tool) {
       return { content: "", summary: `Unknown tool: ${name}`, error: `Tool ${name} not found` };
+    }
+
+    const signal = executionSignal(options);
+    if (signal?.aborted) {
+      return {
+        content: `Tool "${name}" was cancelled before execution.`,
+        summary: `CANCELLED: ${name}`,
+        error: "aborted",
+      };
     }
 
     if (tool.tier === 2) {
@@ -102,7 +143,17 @@ export class ToolRegistry {
           error: "approval_required",
         };
       }
-      const gate = await this.tier2Gate.check(name, params);
+      let gate: Tier2Decision;
+      try {
+        gate = await this.tier2Gate.check(name, params);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return {
+          content: `Tool "${name}" requires authorisation. The authorisation gate failed: ${reason}`,
+          summary: `BLOCKED: ${name}`,
+          error: "approval_required",
+        };
+      }
       if (!gate.allowed) {
         return {
           content: `Tool "${name}" requires authorisation. ${gate.reason ?? "Live operations have not been authorised for this session."}`,
@@ -112,8 +163,16 @@ export class ToolRegistry {
       }
     }
 
+    if (signal?.aborted) {
+      return {
+        content: `Tool "${name}" was cancelled before execution.`,
+        summary: `CANCELLED: ${name}`,
+        error: "aborted",
+      };
+    }
+
     try {
-      return await tool.execute(params, cwd);
+      return await tool.execute(params, cwd, signal);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { content: `Error executing ${name}: ${message}`, summary: `Error: ${name}`, error: message };
@@ -180,7 +239,7 @@ function makeWriteFileTool(): Tool {
         { name: "content", type: "string", description: "Content to write", required: true },
       ],
     },
-    tier: 1,
+    tier: 2,
     async execute(params, cwd): Promise<ToolResult> {
       const filePath = String(params.file_path);
       const resolved = resolveSafePath(filePath, cwd);
@@ -208,7 +267,7 @@ function makeEditFileTool(): Tool {
         { name: "new_string", type: "string", description: "Text to replace with (must differ from old_string)", required: true },
       ],
     },
-    tier: 1,
+    tier: 2,
     async execute(params, cwd): Promise<ToolResult> {
       const filePath = String(params.file_path);
       const oldStr = String(params.old_string);
@@ -336,14 +395,14 @@ function makeRunCommandTool(): Tool {
   return {
     definition: {
       name: "run_command",
-      description: "Execute a shell command. Has a timeout (default 120s, max 600s). Returns stdout and stderr.",
+      description: "Execute a shell command after explicit user authorisation. Has a timeout (default 120s, max 600s). Returns stdout and stderr.",
       parameters: [
         { name: "command", type: "string", description: "The command to execute", required: true },
         { name: "timeout_ms", type: "number", description: "Timeout in milliseconds (default 120000, max 600000)", required: false },
       ],
     },
-    tier: 1,
-    async execute(params, cwd): Promise<ToolResult> {
+    tier: 2,
+    async execute(params, cwd, signal): Promise<ToolResult> {
       const command = String(params.command);
 
       let timeoutMs = 120_000;
@@ -355,14 +414,31 @@ function makeRunCommandTool(): Tool {
         timeoutMs = Math.min(n, 600_000);
       }
 
+      if (signal?.aborted) {
+        return {
+          content: "Command cancelled before it started.",
+          summary: "Command cancelled",
+          error: "aborted",
+        };
+      }
+
       return new Promise((resolve) => {
-        const child = exec(command, {
+        exec(command, {
           cwd,
           timeout: timeoutMs,
           maxBuffer: 20 * 1024 * 1024,
           encoding: "utf8",
+          signal,
         }, (error: any, stdout: string, stderr: string) => {
           const output = [stdout, stderr ? `\nSTDERR:\n${stderr}` : ""].filter(Boolean).join("\n").trim();
+          if (signal?.aborted || error?.name === "AbortError" || error?.code === "ABORT_ERR") {
+            resolve({
+              content: output || "Command cancelled.",
+              summary: "Command cancelled",
+              error: "aborted",
+            });
+            return;
+          }
           resolve({
             content: output || "(no output)",
             summary: error ? `Command failed with exit code ${error.code}` : "Command completed",

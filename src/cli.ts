@@ -103,7 +103,7 @@ const CORPUS_COMMANDS = [
 ] as const;
 
 const CHAT_FLAGS: Record<string, readonly string[]> = {
-  chat: ["resume", "list", "model"]
+  chat: ["resume", "list", "model", "plain", "tui"]
 };
 
 const COMMAND_FLAGS: Record<string, readonly string[]> = {
@@ -171,8 +171,11 @@ const BOOLEAN_FLAGS = new Set([
   "help",
   "no-continuity",
   "once",
+  "list",
+  "plain",
   "recursive",
-  "start"
+  "start",
+  "tui"
 ]);
 
 function helpText(): string {
@@ -237,10 +240,25 @@ Run deepseek-harness capabilities for workflow selection and safety boundaries.
 `;
 }
 
+function chatHelpText(): string {
+  return `DeepSeek Harness chat
+
+Usage:
+  deepseek-harness chat [prompt] [--resume SESSION] [--model MODEL]
+
+Modes:
+  --tui                   Force the full-screen terminal UI (TTY required)
+  --plain                 Force the plain/headless interface
+  --list                  List recent chat sessions
+
+Without a prompt or mode flag, chat selects TUI only when stdin and stdout are TTYs.
+`;
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv.length === 0 || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h" || argv[0] === "--robot-help") {
-    process.stdout.write(argv[0] === "help" && argv[1] === "corpus" ? corpusHelpText() : helpText());
+    process.stdout.write(argv[0] === "help" && argv[1] === "corpus" ? corpusHelpText() : argv[0] === "help" && argv[1] === "chat" ? chatHelpText() : helpText());
     return;
   }
   if (argv[0] === "version" || argv[0] === "--version" || argv[0] === "-V") {
@@ -250,7 +268,7 @@ async function main(): Promise<void> {
 
   const args = parseArgs(argv);
   if (args.flags.help || args.flags.h) {
-    process.stdout.write(args.command === "corpus" ? corpusHelpText() : helpText());
+    process.stdout.write(args.command === "corpus" ? corpusHelpText() : args.command === "chat" ? chatHelpText() : helpText());
     return;
   }
   validateCommandFlags(args);
@@ -376,6 +394,8 @@ async function main(): Promise<void> {
         model: optionalModel(args.flags.model) as string | undefined,
         list: Boolean(args.flags.list),
         prompt: args.positional.length > 0 ? args.positional.join(" ") : undefined,
+        plain: Boolean(args.flags.plain),
+        tui: Boolean(args.flags.tui),
       });
       return;
     }

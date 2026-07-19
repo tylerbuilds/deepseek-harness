@@ -73,42 +73,63 @@ The package uses the existing unscoped name `deepseek-harness`.
 
 ## Interactive Chat
 
-Start an interactive coding session with the DeepSeek Harness chat agent:
+Use chat for supervised coding and repository inspection in the current working
+directory:
 
 ```bash
 deepseek-harness chat
 ```
 
-The chat agent can read, write, edit, and search files in your project. It uses
-DeepSeek V4 Flash by default for speed and cost efficiency.
-
-### Session management
+With no mode flag, chat selects the terminal UI only when both stdin and stdout
+are TTYs. A pipe, redirect or other non-TTY invocation selects the plain
+interface. Use `--plain` to force that classic, pipeline-friendly interface or
+`--tui` to force the UI. Forced TUI mode fails with a structured
+`tui_requires_tty` error unless both streams are TTYs.
 
 ```bash
-deepseek-harness chat                     # New session in current directory
-deepseek-harness chat --resume            # Pick from recent sessions
-deepseek-harness chat --resume sess_abc   # Resume a specific session
-deepseek-harness chat --list              # List all sessions with cost info
-deepseek-harness chat --model pro         # Force Pro model for complex work
-deepseek-harness chat "fix the lint errors"  # One-shot, non-interactive
+deepseek-harness chat --plain
+deepseek-harness chat --tui
+deepseek-harness chat --list
+deepseek-harness chat --resume SESSION_ID
+deepseek-harness chat --model deepseek-v4-pro
+deepseek-harness chat "inspect the failing tests"  # One-shot plain mode
 ```
 
-### Slash commands
+`--resume` requires a session ID; use `--list` to find one. The default model
+is `deepseek-v4-flash`; the supported escalation model is `deepseek-v4-pro`.
+
+The TUI keeps the transcript visible while streaming reasoning and tool
+activity. Its side panel shows the session ID, model, running cost and tokens,
+and recent corpus jobs. During a mutation approval it shows the exact tool and
+parameters: press `y` to allow that call once, `s` to allow that tool for the
+rest of the session, or `n` to decline.
+
+`Ctrl-C` cancels an active turn or clears the composer. `Ctrl-D` exits when the
+composer is empty. The available slash commands are:
 
 | Command | Action |
 |---------|--------|
-| `/help` | Show available commands |
-| `/model` | Show current model |
+| `/help` | Show the slash commands |
+| `/clear` | Clear the transcript |
 | `/cost` | Show session cost and token usage |
-| `/list` | List recent sessions |
+| `/sessions` | List recent sessions |
+| `/jobs` | Show recent corpus jobs |
 | `/exit` | Exit chat |
 
-### Safety
+Read-only tools can run without approval. File writes, exact edits, file
+deletes and shell commands are mutation tools and require an interactive
+approval. One-shot prompts and every non-TTY session fail closed: mutation
+tools are denied instead of attempting to read approval input from a pipe.
 
-- Read, write, and edit operations execute directly with your file permissions.
-- Destructive operations (delete, git push, npm publish) require explicit approval.
-- Live DeepSeek API calls require `DEEPSEEK_API_KEY` in your environment.
-- Cost is tracked per session and visible with `/cost`.
+Chat reads `DEEPSEEK_API_KEY` from the process environment. Keep the secret in
+an environment or approved OS-keychain flow, inject it only when launching the
+process, and never commit it to Git, manifests, documentation, logs or shell
+history.
+
+For books, OCR and translation, use the resumable `corpus` ingest and lifecycle
+commands described in the [heavy corpus workflow guide](corpus-heavy-workloads.md).
+Chat is a supervision and coding surface, not a place to paste an entire book
+into one prompt.
 
 ## Choose an MCP profile
 

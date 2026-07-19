@@ -5,7 +5,7 @@ import { HarnessError } from "./errors.js";
 import type { ApprovalReceipt, RunManifest } from "./schema.js";
 import type { BudgetEstimate } from "./budget.js";
 
-export const STATE_SCHEMA_VERSION = 2;
+export const STATE_SCHEMA_VERSION = 3;
 
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "budget_exhausted";
 export type ItemStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "budget_exhausted";
@@ -50,6 +50,7 @@ export interface MessageRecord {
   session_id: string;
   role: "system" | "user" | "assistant" | "tool";
   content: string | null;
+  reasoning_content: string | null;
   tool_calls_json: string | null;
   tool_call_id: string | null;
   token_count: number | null;
@@ -160,6 +161,7 @@ export class HarnessStore {
         session_id TEXT NOT NULL,
         role TEXT NOT NULL,
         content TEXT,
+        reasoning_content TEXT,
         tool_calls_json TEXT,
         tool_call_id TEXT,
         token_count INTEGER,
@@ -167,8 +169,19 @@ export class HarnessStore {
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
-      PRAGMA user_version = ${STATE_SCHEMA_VERSION};
     `);
+    this.db.exec("BEGIN IMMEDIATE;");
+    try {
+      const messageColumns = this.db.prepare("PRAGMA table_info(messages);").all() as Array<{ name: string }>;
+      if (!messageColumns.some((column) => column.name === "reasoning_content")) {
+        this.db.exec("ALTER TABLE messages ADD COLUMN reasoning_content TEXT;");
+      }
+      this.db.exec(`PRAGMA user_version = ${STATE_SCHEMA_VERSION};`);
+      this.db.exec("COMMIT;");
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
   }
 
   private readSchemaVersion(): number {
@@ -559,18 +572,19 @@ export class HarnessStore {
 	      .run(now, summary, rawMessageCount, rawTotalTokens, rawTotalCostUsd, id);
 	  }
 
-  addMessage(sessionId: string, message: { role: string; content?: string | null; tool_calls_json?: string | null; tool_call_id?: string | null; token_count?: number | null }): number {
+  addMessage(sessionId: string, message: { role: string; content?: string | null; reasoning_content?: string | null; tool_calls_json?: string | null; tool_call_id?: string | null; token_count?: number | null }): number {
     // Validate session exists before inserting (FK is enforced, but this gives a typed error)
     this.getSession(sessionId);
     const now = new Date().toISOString();
     const result = this.db
       .prepare(
-        "INSERT INTO messages (session_id, role, content, tool_calls_json, tool_call_id, token_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO messages (session_id, role, content, reasoning_content, tool_calls_json, tool_call_id, token_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(
         sessionId,
         message.role,
         message.content ?? null,
+        message.reasoning_content ?? null,
         message.tool_calls_json ?? null,
         message.tool_call_id ?? null,
         message.token_count ?? null,
@@ -591,6 +605,7 @@ export class HarnessStore {
       session_id: String(row.session_id),
       role: String(row.role) as MessageRecord["role"],
       content: row.content === null ? null : String(row.content),
+      reasoning_content: row.reasoning_content === null ? null : String(row.reasoning_content),
       tool_calls_json: row.tool_calls_json === null ? null : String(row.tool_calls_json),
       tool_call_id: row.tool_call_id === null ? null : String(row.tool_call_id),
       token_count: row.token_count === null ? null : Number(row.token_count),

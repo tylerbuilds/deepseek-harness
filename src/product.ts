@@ -36,7 +36,7 @@ export function productCapabilities(profile: McpProfile = "full"): Record<string
       name: packageMetadata.name,
       version: PRODUCT_VERSION,
       status: "public_alpha",
-      interfaces: ["cli", "mcp_stdio", "chat_repl"]
+      interfaces: ["cli", "mcp_stdio", "chat_repl", "tui", "headless_exec"]
     },
     active_mcp_profile: profile,
     mcp_profiles: MCP_PROFILES,

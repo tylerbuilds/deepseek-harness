@@ -43,28 +43,21 @@ export function buildContext(session: AgentSession, userInput?: string): Context
   // 3. Message history
   const totalMessages = session.store.countMessages(session.id);
 
-  let messagesToInclude: ChatMessage[];
-  if (totalMessages <= MAX_RECENT_MESSAGES) {
-    messagesToInclude = loadMessages(session);
-  } else {
-    // Load only the most recent messages to avoid loading thousands of old
-    // messages into memory unnecessarily.
-    messagesToInclude = loadMessages(
-      session,
-      MAX_RECENT_MESSAGES,
-      totalMessages - MAX_RECENT_MESSAGES,
-    );
-  }
+  const historyStart = findProtocolSafeHistoryStart(session, totalMessages);
+  const messagesToInclude = loadMessages(
+    session,
+    totalMessages - historyStart,
+    historyStart,
+  );
 
-  if (totalMessages <= MAX_RECENT_MESSAGES) {
+  if (historyStart === 0) {
     for (const msg of messagesToInclude) {
       messages.push(msg);
     }
   } else {
-    const olderCount = totalMessages - MAX_RECENT_MESSAGES;
     messages.push({
       role: "system",
-      content: `[${olderCount} earlier messages have been compressed. The most recent ${MAX_RECENT_MESSAGES} messages follow.]`,
+      content: `[${historyStart} earlier messages were omitted. Complete recent user turns follow.]`,
     });
     for (const msg of messagesToInclude) {
       messages.push(msg);
@@ -87,8 +80,18 @@ export function buildContext(session: AgentSession, userInput?: string): Context
   return {
     messages,
     estimatedTokens,
-    summarised: totalMessages > MAX_RECENT_MESSAGES,
+    summarised: historyStart > 0,
   };
+}
+
+function findProtocolSafeHistoryStart(session: AgentSession, totalMessages: number): number {
+  let start = Math.max(0, totalMessages - MAX_RECENT_MESSAGES);
+  while (start > 0) {
+    const first = loadMessages(session, 1, start)[0];
+    if (!first || first.role === "user") break;
+    start--;
+  }
+  return start;
 }
 
 function readPinnedFiles(cwd: string): string | null {
@@ -107,5 +110,5 @@ function readPinnedFiles(cwd: string): string | null {
 }
 
 export function contextSummary(context: ContextPackage): string {
-  return `Context: ${context.messages.length} messages, ~${context.estimatedTokens} tokens${context.summarised ? " (summarised)" : ""}`;
+  return `Context: ${context.messages.length} messages, ~${context.estimatedTokens} tokens${context.summarised ? " (older messages omitted)" : ""}`;
 }

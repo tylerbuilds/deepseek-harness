@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import packageMetadata from "../package.json" with { type: "json" };
 
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -96,6 +97,23 @@ try {
   const packageRoot = process.platform === "win32"
     ? path.join(prefix, "node_modules", packageMetadata.name)
     : path.join(prefix, "lib", "node_modules", packageMetadata.name);
+  const chatHelp = execFileSync(cli, ["chat", "--help"], {
+    cwd: consumerDirectory,
+    env: cleanEnv,
+    encoding: "utf8"
+  });
+  if (!chatHelp.includes("--tui") || !chatHelp.includes("--plain")) {
+    throw new Error("Installed chat help did not expose terminal mode selection");
+  }
+  execFileSync(process.execPath, [
+    "--input-type=module",
+    "--eval",
+    `await import(${JSON.stringify(pathToFileURL(path.join(packageRoot, "dist", "src", "agent", "tui.js")).href)})`
+  ], {
+    cwd: consumerDirectory,
+    env: cleanEnv,
+    encoding: "utf8"
+  });
   const visionAdapter = path.join(packageRoot, "scripts", "ocr-vision.swift");
   if (!fs.existsSync(visionAdapter)) {
     throw new Error(`Installed package is missing the macOS Vision adapter: ${visionAdapter}`);
@@ -116,6 +134,7 @@ try {
     installed_mcp: mcp,
     doctor_entrypoints_exist: true,
     quickstart_network_calls: 0,
+    chat_tui_importable: true,
     vision_adapter_present: true,
     mcp_profile: "core"
   }, null, 2)}\n`);

@@ -60,6 +60,44 @@ and keep the same profile in the MCP launcher environment as
 5. Export review packets and a state snapshot.
 6. Let Codex or Agent OS reconcile outputs and decide the next action.
 
+## Operate terminal chat safely
+
+Chat is the supervision and coding surface, not the durable workload runner.
+With no mode flag, `deepseek-harness chat` selects the TUI only when both stdin
+and stdout are TTYs. `--plain` forces the classic interface, which is suitable
+for scripts and pipelines; `--tui` forces the UI and fails with
+`tui_requires_tty` when either stream is not a TTY.
+
+```bash
+deepseek-harness chat
+deepseek-harness chat --plain
+deepseek-harness chat --tui
+deepseek-harness chat --list
+deepseek-harness chat --resume SESSION_ID
+deepseek-harness chat --model deepseek-v4-pro
+```
+
+Use `--list` to discover a session ID before `--resume SESSION_ID`. The default
+model is `deepseek-v4-flash`; the only alternate chat model is
+`deepseek-v4-pro`.
+
+The TUI exposes the transcript, streamed reasoning, tool activity, session ID,
+model, cost and recent corpus jobs. Approval prompts show the exact tool call
+and parameters. `y` approves once, `s` approves that tool for the session, and
+`n` declines. `Ctrl-C` cancels the active turn or clears input; `Ctrl-D` exits
+when the composer is empty. The slash commands are `/help`, `/clear`, `/cost`,
+`/sessions`, `/jobs` and `/exit`.
+
+Read-only tools do not need approval. File writes, exact edits, deletes and
+shell commands do. One-shot prompts and non-TTY sessions fail closed for these
+mutations; they cannot grant approval by consuming piped input. Keep
+`DEEPSEEK_API_KEY` in the process environment or an approved OS-keychain flow,
+and never commit it to Git, manifests, docs, logs or shell history.
+
+Use the resumable `corpus` commands for books, OCR and translation. Keep those
+jobs in the manifest/shard lifecycle in [Heavy Corpus Workloads](corpus-heavy-workloads.md);
+do not send a whole book as one chat prompt.
+
 ## Local Proof Loop
 
 ```bash

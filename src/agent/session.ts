@@ -40,11 +40,13 @@ export function addAssistantMessage(
   session: AgentSession,
   content: string | null,
   toolCalls: unknown[] | null,
-  tokenCount: number | null
+  tokenCount: number | null,
+  reasoningContent: string | null = null
 ): number {
   const id = session.store.addMessage(session.id, {
     role: "assistant",
     content,
+    reasoning_content: reasoningContent,
     tool_calls_json: toolCalls ? JSON.stringify(toolCalls) : null,
     token_count: tokenCount,
   });
@@ -70,6 +72,7 @@ export function addToolResult(session: AgentSession, toolCallId: string, content
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string | null;
+  reasoning_content?: string;
   tool_calls?: Array<{
     id: string;
     type: "function";
@@ -85,6 +88,9 @@ export function loadMessages(session: AgentSession, limit?: number, offset?: num
 
 function toChatMessage(record: MessageRecord): ChatMessage {
   const msg: ChatMessage = { role: record.role as ChatMessage["role"], content: record.content };
+  if (record.reasoning_content !== null) {
+    msg.reasoning_content = record.reasoning_content;
+  }
   if (record.tool_calls_json) {
     try {
       msg.tool_calls = JSON.parse(record.tool_calls_json);
@@ -112,5 +118,13 @@ export function updateSessionCost(session: AgentSession, additionalCostUsd: numb
     total_cost_usd: fresh.total_cost_usd + additionalCostUsd,
   });
   // Keep session.record in sync
+  session.record = session.store.getSession(session.id);
+}
+
+export function updateSessionTokens(session: AgentSession, additionalTokens: number): void {
+  const fresh = session.store.getSession(session.id);
+  session.store.updateSession(session.id, {
+    total_tokens: fresh.total_tokens + additionalTokens,
+  });
   session.record = session.store.getSession(session.id);
 }

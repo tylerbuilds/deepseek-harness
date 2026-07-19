@@ -154,6 +154,43 @@ node dist/src/cli.js corpus commit-translation-memory <job_id> --artifact-dir ar
 cargo run -p deepseek-harness-worker -- --manifest examples/basic-run.json --transport fake --concurrency 4 --output rust-worker-basic-run.json
 ```
 
+## Terminal chat
+
+`deepseek-harness chat` is the supervision and coding surface for the current
+working directory. With no mode flag it starts the full-screen TUI only when
+both stdin and stdout are TTYs; redirects, pipes and other non-TTY invocations
+use the plain interface instead.
+
+```bash
+deepseek-harness chat                         # TUI when both streams are TTYs
+deepseek-harness chat --plain                  # Force the plain interface
+deepseek-harness chat --tui                    # Force the TUI (TTY required)
+deepseek-harness chat --list                   # List session IDs and costs
+deepseek-harness chat --resume SESSION_ID      # Resume one known session
+deepseek-harness chat --model deepseek-v4-pro  # Use the V4 Pro lane
+```
+
+`--tui` fails with a structured `tui_requires_tty` error when either stream is
+not a TTY. A prompt argument, such as `deepseek-harness chat "inspect this"`,
+is one-shot plain mode. In one-shot or any non-TTY session, mutation tools
+(`write_file`, `edit_file`, `delete_file` and `run_command`) are denied rather
+than reading approval input from a pipe. In an interactive TTY, each exact
+mutation call is shown for approval: `y` allows it once, `s` allows that tool
+for the session, and `n` declines it. Read-only file and search tools do not
+need this approval.
+
+The TUI shows the transcript, streamed reasoning and tool activity, plus the
+session ID, model, cost and recent corpus jobs. `Ctrl-C` cancels an active turn
+or clears the composer; `Ctrl-D` exits when the composer is empty. Its slash
+commands are `/help`, `/clear`, `/cost`, `/sessions`, `/jobs` and `/exit`.
+
+Chat reads `DEEPSEEK_API_KEY` from the process environment. Keep the key in an
+environment or approved OS-keychain flow, inject it only at launch, and never
+commit it to Git, manifests, documentation, logs or shell history.
+
+Use the resumable `corpus` commands for books, OCR and translation. Chat is for
+supervision and coding; do not put an entire book into one chat prompt.
+
 The default example uses the fake transport and performs no network calls.
 The corpus runner supports deterministic text and JSONL ingest, chapter-aware
 book analysis, real local image/PDF OCR, reviewed exact-match translation

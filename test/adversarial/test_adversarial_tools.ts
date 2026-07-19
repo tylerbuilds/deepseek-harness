@@ -22,12 +22,22 @@ function tempFile(dir: string, name: string, content: string): string {
   return p;
 }
 
+function createAuthorisedRegistry(): ToolRegistry {
+  const registry = createToolRegistry();
+  registry.setTier2Gate({
+    async check() {
+      return { allowed: true, scope: "once" };
+    },
+  });
+  return registry;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // CATEGORY 1: MALFORMED INPUTS
 // ═══════════════════════════════════════════════════════════════════════
 
 await test("CAT1: Malformed Inputs", async (t) => {
-  const registry = createToolRegistry();
+  const registry = createAuthorisedRegistry();
   const dir = tempDir();
   const f = tempFile(dir, "test.txt", "hello world\nline two\nline three\n");
 
@@ -105,7 +115,7 @@ await test("CAT1: Malformed Inputs", async (t) => {
 
 await test("CAT2: Race Conditions", async (t) => {
   await t.test("concurrent write_file + read_file on same path", async () => {
-    const registry = createToolRegistry();
+    const registry = createAuthorisedRegistry();
     const dir = tempDir();
     const p = path.join(dir, "race.txt");
 
@@ -130,7 +140,7 @@ await test("CAT2: Race Conditions", async (t) => {
   });
 
   await t.test("rapid edit_file calls on overlapping regions", async () => {
-    const registry = createToolRegistry();
+    const registry = createAuthorisedRegistry();
     const dir = tempDir();
     const p = tempFile(dir, "edit-race.txt", "AAAAAAAAAAAAAAAAAAAA");
 
@@ -156,7 +166,7 @@ await test("CAT2: Race Conditions", async (t) => {
   });
 
   await t.test("simultaneous search_content during file writes", async () => {
-    const registry = createToolRegistry();
+    const registry = createAuthorisedRegistry();
     const dir = tempDir();
     // Create many files
     for (let i = 0; i < 50; i++) {
@@ -181,7 +191,7 @@ await test("CAT2: Race Conditions", async (t) => {
   });
 
   await t.test("multiple run_command writing to same file", async () => {
-    const registry = createToolRegistry();
+    const registry = createAuthorisedRegistry();
     const dir = tempDir();
     const p = path.join(dir, "cmd-race.txt");
     fs.writeFileSync(p, "", "utf8");
@@ -208,7 +218,7 @@ await test("CAT2: Race Conditions", async (t) => {
 // ═══════════════════════════════════════════════════════════════════════
 
 await test("CAT3: Boundary Values", async (t) => {
-  const registry = createToolRegistry();
+  const registry = createAuthorisedRegistry();
   const dir = tempDir();
 
   await t.test("extremely long file_path (near OS limit)", async () => {
@@ -357,7 +367,7 @@ await test("CAT3: Boundary Values", async (t) => {
 // ═══════════════════════════════════════════════════════════════════════
 
 await test("CAT4: Resource Exhaustion", async (t) => {
-  const registry = createToolRegistry();
+  const registry = createAuthorisedRegistry();
   const dir = tempDir();
 
   await t.test("search_content across many files (500+)", async () => {
@@ -439,7 +449,7 @@ await test("CAT4: Resource Exhaustion", async (t) => {
 // ═══════════════════════════════════════════════════════════════════════
 
 await test("CAT5: State Corruption", async (t) => {
-  const registry = createToolRegistry();
+  const registry = createAuthorisedRegistry();
   const dir = tempDir();
 
   await t.test("edit_file on file deleted between read and write", async () => {
@@ -521,7 +531,7 @@ await test("CAT5: State Corruption", async (t) => {
 // ═══════════════════════════════════════════════════════════════════════
 
 await test("CAT6: Type Confusion", async (t) => {
-  const registry = createToolRegistry();
+  const registry = createAuthorisedRegistry();
   const dir = tempDir();
 
   await t.test("read_file with object as file_path", async () => {
@@ -611,7 +621,7 @@ await test("CAT6: Type Confusion", async (t) => {
 // ═══════════════════════════════════════════════════════════════════════
 
 await test("CAT7: Injection Attacks", async (t) => {
-  const registry = createToolRegistry();
+  const registry = createAuthorisedRegistry();
   const dir = tempDir();
 
   await t.test("PATH TRAVERSAL: read_file with ../../../etc/passwd", async () => {
@@ -734,6 +744,7 @@ await test("CAT7: Injection Attacks", async (t) => {
 
 await test("CAT8: Invalid Assumptions", async (t) => {
   const registry = createToolRegistry();
+  const approvedRegistry = createAuthorisedRegistry();
   const dir = tempDir();
 
   await t.test("read_file on non-existent file", async () => {
@@ -758,7 +769,7 @@ await test("CAT8: Invalid Assumptions", async (t) => {
   });
 
   await t.test("absolute path requirement enforced for write_file", async () => {
-    const result = await registry.execute("write_file", {
+    const result = await approvedRegistry.execute("write_file", {
       file_path: "relative/output.txt",
       content: "test",
     }, dir);
@@ -768,7 +779,7 @@ await test("CAT8: Invalid Assumptions", async (t) => {
 
   await t.test("absolute path requirement enforced for edit_file", async () => {
     const p = tempFile(dir, "edit-rel.txt", "test content");
-    const result = await registry.execute("edit_file", {
+    const result = await approvedRegistry.execute("edit_file", {
       file_path: "relative/edit.txt",
       old_string: "test",
       new_string: "changed",
@@ -791,7 +802,7 @@ await test("CAT8: Invalid Assumptions", async (t) => {
 
   await t.test("edit_file old_string uniqueness verified", async () => {
     const p = tempFile(dir, "unique-edit.txt", "A A A");
-    const result = await registry.execute("edit_file", {
+    const result = await approvedRegistry.execute("edit_file", {
       file_path: p,
       old_string: "A",
       new_string: "B",
@@ -803,7 +814,7 @@ await test("CAT8: Invalid Assumptions", async (t) => {
 
   await t.test("edit_file old_string not found", async () => {
     const p = tempFile(dir, "no-match.txt", "hello world");
-    const result = await registry.execute("edit_file", {
+    const result = await approvedRegistry.execute("edit_file", {
       file_path: p,
       old_string: "nonexistent text",
       new_string: "replacement",
@@ -814,7 +825,7 @@ await test("CAT8: Invalid Assumptions", async (t) => {
 
   await t.test("write_file creates parent directories as promised", async () => {
     const deepPath = path.join(dir, "a", "b", "c", "d", "deep-file.txt");
-    const result = await registry.execute("write_file", {
+    const result = await approvedRegistry.execute("write_file", {
       file_path: deepPath,
       content: "deep content",
     }, dir);
@@ -862,7 +873,7 @@ await test("CAT8: Invalid Assumptions", async (t) => {
 
   await t.test("edit_file with absolute path resolves correctly", async () => {
     const p = tempFile(dir, "abs-edit.txt", "ORIGINAL TEXT");
-    const result = await registry.execute("edit_file", {
+    const result = await approvedRegistry.execute("edit_file", {
       file_path: p,
       old_string: "ORIGINAL",
       new_string: "MODIFIED",
@@ -894,7 +905,7 @@ await test("CAT8: Invalid Assumptions", async (t) => {
 // ═══════════════════════════════════════════════════════════════════════
 
 await test("HAPPY PATH: All tools work correctly with valid inputs", async (t) => {
-  const registry = createToolRegistry();
+  const registry = createAuthorisedRegistry();
   const dir = tempDir();
 
   await t.test("read_file happy path", async () => {

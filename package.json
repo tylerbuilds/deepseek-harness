@@ -43,16 +43,31 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.18.2",
+    "ink": "^7.1.1",
+    "react": "^19.2.7",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^24.0.15",
+    "@types/react": "^19.2.7",
     "typescript": "^5.8.3"
   },
   "engines": {
     "node": ">=24"
   },
   "files": [
+    "dist/src/agent/cli.js",
+    "dist/src/agent/context.js",
+    "dist/src/agent/dispatch.js",
+    "dist/src/agent/events.js",
+    "dist/src/agent/jobs.js",
+    "dist/src/agent/loop.js",
+    "dist/src/agent/prompts.js",
+    "dist/src/agent/session.js",
+    "dist/src/agent/stream.js",
+    "dist/src/agent/tools.js",
+    "dist/src/agent/tui-state.js",
+    "dist/src/agent/tui.js",
     "dist/src/approval.js",
     "dist/src/budget.js",
     "dist/src/cli.js",
