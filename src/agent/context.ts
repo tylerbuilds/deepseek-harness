@@ -4,32 +4,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { baseSystemPrompt } from "./prompts.js";
 import { createToolRegistry } from "./tools.js";
+import type { AgentSession, ChatMessage } from "./session.js";
+import { loadMessages } from "./session.js";
 
 const MAX_RECENT_MESSAGES = 25;
 const PINNED_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "COPILOT.md"];
 
-// ── Types defined inline (will move to session.ts in Task 4) ──
-
-export interface ChatMessage {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
-  tool_calls?: Array<{
-    id?: string;
-    type?: "function";
-    function?: { name: string; arguments: string };
-  }>;
-  tool_call_id?: string;
-  name?: string;
-}
-
-export interface AgentSession {
-  cwd: string;
-}
-
-function loadMessages(_session: AgentSession): ChatMessage[] {
-  // TODO: Replace with actual store query when session.ts is implemented (Task 4)
-  return [];
-}
+// Re-export for consumers that previously depended on context.ts for these types
+export type { AgentSession, ChatMessage };
 
 // ── Context Package ──
 
