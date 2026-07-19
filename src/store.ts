@@ -5,7 +5,7 @@ import { HarnessError } from "./errors.js";
 import type { ApprovalReceipt, RunManifest } from "./schema.js";
 import type { BudgetEstimate } from "./budget.js";
 
-export const STATE_SCHEMA_VERSION = 1;
+export const STATE_SCHEMA_VERSION = 2;
 
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "budget_exhausted";
 export type ItemStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "budget_exhausted";
@@ -31,6 +31,29 @@ export interface ItemRecord {
   usage: unknown;
   started_at: string | null;
   finished_at: string | null;
+}
+
+export interface SessionRecord {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  cwd: string;
+  model: string;
+  summary: string;
+  message_count: number;
+  total_tokens: number;
+  total_cost_usd: number;
+}
+
+export interface MessageRecord {
+  id: number;
+  session_id: string;
+  role: "system" | "user" | "assistant" | "tool";
+  content: string | null;
+  tool_calls_json: string | null;
+  tool_call_id: string | null;
+  token_count: number | null;
+  created_at: string;
 }
 
 export class HarnessStore {
@@ -120,6 +143,29 @@ export class HarnessStore {
       );
       CREATE INDEX IF NOT EXISTS idx_budget_reservations_local_date ON budget_reservations(local_date);
       CREATE INDEX IF NOT EXISTS idx_budget_reservations_created_at ON budget_reservations(created_at);
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        model TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        message_count INTEGER NOT NULL DEFAULT 0,
+        total_tokens INTEGER NOT NULL DEFAULT 0,
+        total_cost_usd REAL NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT,
+        tool_calls_json TEXT,
+        tool_call_id TEXT,
+        token_count INTEGER,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
       PRAGMA user_version = ${STATE_SCHEMA_VERSION};
     `);
   }
@@ -430,5 +476,115 @@ export class HarnessStore {
     this.db
       .prepare("INSERT INTO events (run_id, ts, type, payload_json) VALUES (?, ?, ?, ?)")
       .run(runId, new Date().toISOString(), type, JSON.stringify(payload));
+  }
+
+  createSession(id: string, cwd: string, model: string): SessionRecord {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        "INSERT INTO sessions (id, created_at, updated_at, cwd, model) VALUES (?, ?, ?, ?, ?)"
+      )
+      .run(id, now, now, cwd, model);
+    return this.getSession(id);
+  }
+
+  getSession(id: string): SessionRecord {
+    const row = this.db
+      .prepare("SELECT * FROM sessions WHERE id = ?")
+      .get(id) as Record<string, unknown> | undefined;
+    if (!row) {
+      throw new HarnessError("session_not_found", `Session not found: ${id}`);
+    }
+    return {
+      id: String(row.id),
+      created_at: String(row.created_at),
+      updated_at: String(row.updated_at),
+      cwd: String(row.cwd),
+      model: String(row.model),
+      summary: String(row.summary ?? ""),
+      message_count: Number(row.message_count ?? 0),
+      total_tokens: Number(row.total_tokens ?? 0),
+      total_cost_usd: Number(row.total_cost_usd ?? 0),
+    };
+  }
+
+  listSessions(limit = 20): SessionRecord[] {
+    const rows = this.db
+      .prepare("SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?")
+      .all(limit) as Record<string, unknown>[];
+    return rows.map((row) => ({
+      id: String(row.id),
+      created_at: String(row.created_at),
+      updated_at: String(row.updated_at),
+      cwd: String(row.cwd),
+      model: String(row.model),
+      summary: String(row.summary ?? ""),
+      message_count: Number(row.message_count ?? 0),
+      total_tokens: Number(row.total_tokens ?? 0),
+      total_cost_usd: Number(row.total_cost_usd ?? 0),
+    }));
+  }
+
+  updateSession(id: string, updates: { summary?: string; message_count?: number; total_tokens?: number; total_cost_usd?: number }): void {
+    const now = new Date().toISOString();
+    const existing = this.getSession(id);
+    const summary = updates.summary ?? existing.summary;
+    const messageCount = updates.message_count ?? existing.message_count;
+    const totalTokens = updates.total_tokens ?? existing.total_tokens;
+    const totalCostUsd = updates.total_cost_usd ?? existing.total_cost_usd;
+    this.db
+      .prepare(
+        "UPDATE sessions SET updated_at = ?, summary = ?, message_count = ?, total_tokens = ?, total_cost_usd = ? WHERE id = ?"
+      )
+      .run(now, summary, messageCount, totalTokens, totalCostUsd, id);
+  }
+
+  addMessage(sessionId: string, message: { role: string; content?: string | null; tool_calls_json?: string | null; tool_call_id?: string | null; token_count?: number | null }): number {
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        "INSERT INTO messages (session_id, role, content, tool_calls_json, tool_call_id, token_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        sessionId,
+        message.role,
+        message.content ?? null,
+        message.tool_calls_json ?? null,
+        message.tool_call_id ?? null,
+        message.token_count ?? null,
+        now
+      );
+    return Number(result.lastInsertRowid);
+  }
+
+  getMessages(sessionId: string, limit?: number, offset = 0): MessageRecord[] {
+    const query = limit !== undefined
+      ? "SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC LIMIT ? OFFSET ?"
+      : "SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC";
+    const rows = limit !== undefined
+      ? this.db.prepare(query).all(sessionId, limit, offset) as Record<string, unknown>[]
+      : this.db.prepare(query).all(sessionId) as Record<string, unknown>[];
+    return rows.map((row) => ({
+      id: Number(row.id),
+      session_id: String(row.session_id),
+      role: String(row.role) as MessageRecord["role"],
+      content: row.content === null ? null : String(row.content),
+      tool_calls_json: row.tool_calls_json === null ? null : String(row.tool_calls_json),
+      tool_call_id: row.tool_call_id === null ? null : String(row.tool_call_id),
+      token_count: row.token_count === null ? null : Number(row.token_count),
+      created_at: String(row.created_at),
+    }));
+  }
+
+  countMessages(sessionId: string): number {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS cnt FROM messages WHERE session_id = ?")
+      .get(sessionId) as { cnt: number };
+    return row.cnt;
+  }
+
+  deleteSession(sessionId: string): void {
+    this.db.prepare("DELETE FROM messages WHERE session_id = ?").run(sessionId);
+    this.db.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
   }
 }
