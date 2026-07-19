@@ -34,6 +34,12 @@ export async function consumeStream(
   };
   if (tools.length > 0) body.tools = tools;
 
+  // Validate timeoutMs: AbortSignal.timeout only accepts values in [0, 2^32-1]
+  const MAX_TIMEOUT_MS = 4_294_967_295; // 2^32 - 1
+  const safeTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs >= 0
+    ? Math.min(timeoutMs, MAX_TIMEOUT_MS)
+    : MAX_TIMEOUT_MS;
+
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -41,7 +47,7 @@ export async function consumeStream(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: AbortSignal.timeout(safeTimeoutMs),
   });
 
   if (!response.ok || !response.body) {
@@ -72,35 +78,39 @@ export async function consumeStream(
         if (!trimmed || !trimmed.startsWith("data: ")) continue;
         const data = trimmed.slice(6);
         if (data === "[DONE]") continue;
+        let parsed: Record<string, unknown>;
         try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta;
-          if (!delta) continue;
-          if (delta.content) {
-            fullText += delta.content;
-            callbacks.onText(delta.content);
-          }
-          if (delta.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              const idx = tc.index as number;
-              if (!toolCallMap.has(idx)) {
-                toolCallMap.set(idx, { id: tc.id ?? "", name: "", args: "" });
-              }
-              const entry = toolCallMap.get(idx)!;
-              if (tc.id) entry.id = tc.id;
-              if (tc.function?.name) entry.name += tc.function.name;
-              if (tc.function?.arguments) entry.args += tc.function.arguments;
-            }
-          }
-          if (parsed.usage) {
-            usage = {
-              prompt_tokens: Number(parsed.usage.prompt_tokens ?? 0),
-              completion_tokens: Number(parsed.usage.completion_tokens ?? 0),
-              total_tokens: Number(parsed.usage.total_tokens ?? 0),
-            };
-          }
+          parsed = JSON.parse(data);
         } catch {
-          // Skip malformed SSE lines
+          // Skip malformed SSE data lines
+          continue;
+        }
+	        const choices = parsed.choices as Array<Record<string, unknown>> | undefined;
+	        const delta = choices?.[0]?.delta as Record<string, unknown> | undefined;
+        if (!delta) continue;
+        if (delta.content) {
+          fullText += delta.content as string;
+          callbacks.onText(delta.content as string);
+        }
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls as Array<Record<string, unknown>>) {
+            const idx = tc.index as number;
+            if (!toolCallMap.has(idx)) {
+              toolCallMap.set(idx, { id: (tc.id as string) ?? "", name: "", args: "" });
+            }
+            const entry = toolCallMap.get(idx)!;
+            if (tc.id) entry.id = tc.id as string;
+            if ((tc.function as Record<string, unknown> | undefined)?.name) entry.name += (tc.function as Record<string, unknown>).name;
+            if ((tc.function as Record<string, unknown> | undefined)?.arguments) entry.args += (tc.function as Record<string, unknown>).arguments as string;
+          }
+        }
+        if (parsed.usage) {
+          const u = parsed.usage as Record<string, unknown>;
+          usage = {
+            prompt_tokens: Number(u.prompt_tokens ?? 0),
+            completion_tokens: Number(u.completion_tokens ?? 0),
+            total_tokens: Number(u.total_tokens ?? 0),
+          };
         }
       }
     }

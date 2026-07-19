@@ -23,13 +23,15 @@ function parseStatusBlock(text: string): {
   contextNeeded?: string;
   blocker?: string;
 } {
-  const match = text.match(/```status\n([\s\S]*?)\n```/);
+  const validStatuses: SubagentStatus[] = ["DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED"];
+  const match = text.match(/```status\r?\n([\s\S]*?)\r?\n```/);
   if (!match) {
     return { status: "DONE", summary: text.slice(0, 200) };
   }
   const block = match[1];
-  const lines = block.split("\n").map((l) => l.trim());
-  const status = (lines.find((l) => l.startsWith("status:"))?.split(":").slice(1).join(":").trim() ?? "DONE") as SubagentStatus;
+  const lines = block.split(/\r?\n/).map((l) => l.trim());
+  const rawStatus = lines.find((l) => l.startsWith("status:"))?.split(":").slice(1).join(":").trim() ?? "DONE";
+  const status = validStatuses.includes(rawStatus as SubagentStatus) ? (rawStatus as SubagentStatus) : "DONE";
   const summary = lines.find((l) => l.startsWith("summary:"))?.split(":").slice(1).join(":").trim() ?? "";
   const concerns = lines.find((l) => l.startsWith("concerns:"))?.split(":").slice(1).join(":").trim();
   const contextNeeded = lines.find((l) => l.startsWith("context_needed:"))?.split(":").slice(1).join(":").trim();

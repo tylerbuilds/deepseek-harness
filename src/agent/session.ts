@@ -31,6 +31,8 @@ export function addUserMessage(session: AgentSession, content: string): number {
   session.store.updateSession(session.id, {
     message_count: session.store.countMessages(session.id),
   });
+  // Keep session.record in sync
+  session.record = session.store.getSession(session.id);
   return id;
 }
 
@@ -46,10 +48,14 @@ export function addAssistantMessage(
     tool_calls_json: toolCalls ? JSON.stringify(toolCalls) : null,
     token_count: tokenCount,
   });
+  // Read fresh total_tokens from store to avoid stale session.record caching
+  const fresh = session.store.getSession(session.id);
   session.store.updateSession(session.id, {
     message_count: session.store.countMessages(session.id),
-    total_tokens: session.record.total_tokens + (tokenCount ?? 0),
+    total_tokens: fresh.total_tokens + (tokenCount ?? 0),
   });
+  // Keep session.record in sync
+  session.record = session.store.getSession(session.id);
   return id;
 }
 
@@ -80,7 +86,12 @@ export function loadMessages(session: AgentSession, limit?: number, offset?: num
 function toChatMessage(record: MessageRecord): ChatMessage {
   const msg: ChatMessage = { role: record.role as ChatMessage["role"], content: record.content };
   if (record.tool_calls_json) {
-    msg.tool_calls = JSON.parse(record.tool_calls_json);
+    try {
+      msg.tool_calls = JSON.parse(record.tool_calls_json);
+    } catch {
+      // Corrupted tool_calls_json — skip rather than crashing
+      // The message is still usable without tool_calls
+    }
   }
   if (record.tool_call_id) {
     msg.tool_call_id = record.tool_call_id;
@@ -90,10 +101,16 @@ function toChatMessage(record: MessageRecord): ChatMessage {
 
 export function updateSessionSummary(session: AgentSession, summary: string): void {
   session.store.updateSession(session.id, { summary });
+  // Keep session.record in sync
+  session.record = session.store.getSession(session.id);
 }
 
 export function updateSessionCost(session: AgentSession, additionalCostUsd: number): void {
+  // Read fresh total_cost_usd from store to avoid stale session.record caching
+  const fresh = session.store.getSession(session.id);
   session.store.updateSession(session.id, {
-    total_cost_usd: session.record.total_cost_usd + additionalCostUsd,
+    total_cost_usd: fresh.total_cost_usd + additionalCostUsd,
   });
+  // Keep session.record in sync
+  session.record = session.store.getSession(session.id);
 }

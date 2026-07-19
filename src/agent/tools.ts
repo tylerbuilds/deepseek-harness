@@ -2,9 +2,27 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { exec } from "node:child_process";
 import { HarnessError } from "../errors.js";
+
+// ── Path safety ──
+
+function resolveSafePath(filePath: string, workspaceRoot: string): string {
+  if (!path.isAbsolute(filePath)) {
+    throw new HarnessError("invalid_path", `File path must be absolute: ${filePath}`);
+  }
+  const resolved = path.resolve(filePath);
+  const normalizedRoot = path.resolve(workspaceRoot);
+  if (!resolved.startsWith(normalizedRoot + path.sep) && resolved !== normalizedRoot) {
+    throw new HarnessError(
+      "path_traversal_blocked",
+      `Path traversal detected: "${filePath}" resolves outside the workspace root. ` +
+      `All file operations must stay within the workspace.`
+    );
+  }
+  return resolved;
+}
 
 export interface ToolParam {
   name: string;
@@ -117,20 +135,36 @@ function makeReadFileTool(): Tool {
       ],
     },
     tier: 1,
-    async execute(params, _cwd): Promise<ToolResult> {
-      const filePath = String(params.file_path);
-      if (!path.isAbsolute(filePath)) {
-        throw new HarnessError("invalid_path", `File path must be absolute: ${filePath}`);
-      }
-      const content = fs.readFileSync(filePath, "utf8");
+    async execute(params, cwd): Promise<ToolResult> {
+      const resolved = resolveSafePath(String(params.file_path), cwd);
+      const content = fs.readFileSync(resolved, "utf8");
       const lines = content.split("\n");
-      const offset = typeof params.offset === "number" ? params.offset : 1;
-      const limit = typeof params.limit === "number" ? params.limit : lines.length;
-      const slice = lines.slice(Math.max(0, offset - 1), offset - 1 + limit);
+
+      let offset = 1;
+      if (params.offset !== undefined && params.offset !== null) {
+        const n = Number(params.offset);
+        if (!Number.isFinite(n) || n < 1 || !Number.isInteger(n)) {
+          throw new HarnessError("invalid_param", `offset must be a positive integer, got: ${params.offset}`);
+        }
+        offset = n;
+      }
+
+      let limit = lines.length;
+      if (params.limit !== undefined && params.limit !== null) {
+        const n = Number(params.limit);
+        if (!Number.isFinite(n) || n < 1 || !Number.isInteger(n)) {
+          throw new HarnessError("invalid_param", `limit must be a positive integer, got: ${params.limit}`);
+        }
+        limit = n;
+      }
+
+      const start = Math.max(0, offset - 1);
+      const end = Math.min(lines.length, start + limit);
+      const slice = lines.slice(start, end);
       const numbered = slice.map((line, i) => `${String(offset + i).padStart(6)}\t${line}`).join("\n");
       return {
         content: numbered,
-        summary: `Read ${slice.length} lines from ${path.basename(filePath)}`,
+        summary: `Read ${slice.length} lines from ${path.basename(resolved)}`,
       };
     },
   };
@@ -147,19 +181,17 @@ function makeWriteFileTool(): Tool {
       ],
     },
     tier: 1,
-    async execute(params, _cwd): Promise<ToolResult> {
+    async execute(params, cwd): Promise<ToolResult> {
       const filePath = String(params.file_path);
-      if (!path.isAbsolute(filePath)) {
-        throw new HarnessError("invalid_path", `File path must be absolute: ${filePath}`);
-      }
+      const resolved = resolveSafePath(filePath, cwd);
       const content = String(params.content);
-      const dir = path.dirname(filePath);
+      const dir = path.dirname(resolved);
       fs.mkdirSync(dir, { recursive: true });
-      const existed = fs.existsSync(filePath);
-      fs.writeFileSync(filePath, content, "utf8");
+      const existed = fs.existsSync(resolved);
+      fs.writeFileSync(resolved, content, "utf8");
       return {
-        content: existed ? `Overwrote ${filePath}` : `Created ${filePath}`,
-        summary: existed ? `Overwrote ${path.basename(filePath)}` : `Created ${path.basename(filePath)}`,
+        content: existed ? `Overwrote ${resolved}` : `Created ${resolved}`,
+        summary: existed ? `Overwrote ${path.basename(resolved)}` : `Created ${path.basename(resolved)}`,
       };
     },
   };
@@ -177,17 +209,15 @@ function makeEditFileTool(): Tool {
       ],
     },
     tier: 1,
-    async execute(params, _cwd): Promise<ToolResult> {
+    async execute(params, cwd): Promise<ToolResult> {
       const filePath = String(params.file_path);
       const oldStr = String(params.old_string);
       const newStr = String(params.new_string);
-      if (!path.isAbsolute(filePath)) {
-        throw new HarnessError("invalid_path", `File path must be absolute: ${filePath}`);
-      }
+      const resolved = resolveSafePath(filePath, cwd);
       if (oldStr === newStr) {
         throw new HarnessError("invalid_edit", "old_string and new_string must be different");
       }
-      const content = fs.readFileSync(filePath, "utf8");
+      const content = fs.readFileSync(resolved, "utf8");
       const firstIndex = content.indexOf(oldStr);
       if (firstIndex === -1) {
         throw new HarnessError("edit_string_not_found", "old_string was not found in the file");
@@ -196,10 +226,10 @@ function makeEditFileTool(): Tool {
         throw new HarnessError("edit_string_not_unique", "old_string matches multiple locations in the file");
       }
       const newContent = content.slice(0, firstIndex) + newStr + content.slice(firstIndex + oldStr.length);
-      fs.writeFileSync(filePath, newContent, "utf8");
+      fs.writeFileSync(resolved, newContent, "utf8");
       return {
-        content: `Edited ${filePath}: replaced ${oldStr.length} chars with ${newStr.length} chars`,
-        summary: `Edited ${path.basename(filePath)}`,
+        content: `Edited ${resolved}: replaced ${oldStr.length} chars with ${newStr.length} chars`,
+        summary: `Edited ${path.basename(resolved)}`,
       };
     },
   };
@@ -220,26 +250,44 @@ function makeSearchContentTool(): Tool {
     async execute(params, cwd): Promise<ToolResult> {
       const pattern = String(params.pattern);
       const directory = typeof params.directory === "string" ? String(params.directory) : cwd;
-      const filePattern = typeof params.file_pattern === "string" ? String(params.file_pattern) : undefined;
 
       let stdout: string;
       try {
         const args = ["-n", "--no-heading", "-e", pattern];
-        if (filePattern) args.push("--glob", filePattern);
+        if (typeof params.file_pattern === "string") {
+          args.push("--glob", String(params.file_pattern));
+        }
         args.push(directory);
-        stdout = execSync(`rg ${args.map(a => JSON.stringify(a)).join(" ")}`, {
+        stdout = execFileSync("rg", args, {
           encoding: "utf8",
           timeout: 30000,
           maxBuffer: 10 * 1024 * 1024,
         });
       } catch {
-        const grepArgs = ["-rn", "-E", pattern, directory];
-        if (filePattern) grepArgs.push("--include", filePattern);
-        stdout = execSync(`grep ${grepArgs.map(a => JSON.stringify(a)).join(" ")}`, {
-          encoding: "utf8",
-          timeout: 30000,
-          maxBuffer: 10 * 1024 * 1024,
-        });
+        try {
+          const grepArgs = ["-rn", "-E", pattern];
+          if (typeof params.file_pattern === "string") {
+            grepArgs.push("--include", String(params.file_pattern));
+          }
+          grepArgs.push(directory);
+          stdout = execFileSync("grep", grepArgs, {
+            encoding: "utf8",
+            timeout: 30000,
+            maxBuffer: 10 * 1024 * 1024,
+          });
+        } catch (grepErr: any) {
+          // Both rg and grep failed — return empty results
+          if (grepErr?.stderr) {
+            return {
+              content: `Search error: ${grepErr.stderr.toString().trim()}`,
+              summary: `0 matches for "${pattern}"`,
+            };
+          }
+          return {
+            content: "No matches found.",
+            summary: `0 matches for "${pattern}"`,
+          };
+        }
       }
 
       const lines = stdout.trim().split("\n").filter(Boolean);
@@ -265,7 +313,12 @@ function makeSearchFilesTool(): Tool {
     async execute(params, cwd): Promise<ToolResult> {
       const pattern = String(params.pattern);
       const directory = typeof params.directory === "string" ? String(params.directory) : cwd;
-      const stdout = execSync(`find ${JSON.stringify(directory)} -name ${JSON.stringify(pattern)} -not -path '*/node_modules/*' -not -path '*/.git/*'`, {
+      const stdout = execFileSync("find", [
+        directory,
+        "-name", pattern,
+        "-not", "-path", "*/node_modules/*",
+        "-not", "-path", "*/.git/*",
+      ], {
         encoding: "utf8",
         timeout: 15000,
         maxBuffer: 5 * 1024 * 1024,
@@ -292,7 +345,16 @@ function makeRunCommandTool(): Tool {
     tier: 1,
     async execute(params, cwd): Promise<ToolResult> {
       const command = String(params.command);
-      const timeoutMs = typeof params.timeout_ms === "number" ? Math.min(params.timeout_ms, 600_000) : 120_000;
+
+      let timeoutMs = 120_000;
+      if (params.timeout_ms !== undefined && params.timeout_ms !== null) {
+        const n = Number(params.timeout_ms);
+        if (!Number.isFinite(n) || n <= 0) {
+          throw new HarnessError("invalid_param", `timeout_ms must be a positive number, got: ${params.timeout_ms}`);
+        }
+        timeoutMs = Math.min(n, 600_000);
+      }
+
       return new Promise((resolve) => {
         const child = exec(command, {
           cwd,
@@ -322,19 +384,17 @@ function makeListDirectoryTool(): Tool {
       ],
     },
     tier: 1,
-    async execute(params, _cwd): Promise<ToolResult> {
+    async execute(params, cwd): Promise<ToolResult> {
       const dirPath = String(params.directory);
-      if (!path.isAbsolute(dirPath)) {
-        throw new HarnessError("invalid_path", `Directory path must be absolute: ${dirPath}`);
-      }
-      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      const resolved = resolveSafePath(dirPath, cwd);
+      const entries = fs.readdirSync(resolved, { withFileTypes: true });
       const listing = entries.map((e) => {
         const suffix = e.isDirectory() ? "/" : e.isSymbolicLink() ? "@" : "";
         return `${e.name}${suffix}`;
       }).join("\n");
       return {
         content: listing || "(empty directory)",
-        summary: `${entries.length} items in ${path.basename(dirPath)}`,
+        summary: `${entries.length} items in ${path.basename(resolved)}`,
       };
     },
   };
@@ -352,15 +412,13 @@ function makeDeleteFileTool(): Tool {
       ],
     },
     tier: 2,
-    async execute(params, _cwd): Promise<ToolResult> {
+    async execute(params, cwd): Promise<ToolResult> {
       const filePath = String(params.file_path);
-      if (!path.isAbsolute(filePath)) {
-        throw new HarnessError("invalid_path", `File path must be absolute: ${filePath}`);
-      }
-      fs.unlinkSync(filePath);
+      const resolved = resolveSafePath(filePath, cwd);
+      fs.unlinkSync(resolved);
       return {
-        content: `Deleted ${filePath}`,
-        summary: `Deleted ${path.basename(filePath)}`,
+        content: `Deleted ${resolved}`,
+        summary: `Deleted ${path.basename(resolved)}`,
       };
     },
   };

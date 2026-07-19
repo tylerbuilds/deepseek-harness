@@ -41,28 +41,39 @@ export function buildContext(session: AgentSession, userInput?: string): Context
   }
 
   // 3. Message history
-  const allMessages = loadMessages(session);
-  const totalMessages = allMessages.length;
+  const totalMessages = session.store.countMessages(session.id);
+
+  let messagesToInclude: ChatMessage[];
+  if (totalMessages <= MAX_RECENT_MESSAGES) {
+    messagesToInclude = loadMessages(session);
+  } else {
+    // Load only the most recent messages to avoid loading thousands of old
+    // messages into memory unnecessarily.
+    messagesToInclude = loadMessages(
+      session,
+      MAX_RECENT_MESSAGES,
+      totalMessages - MAX_RECENT_MESSAGES,
+    );
+  }
 
   if (totalMessages <= MAX_RECENT_MESSAGES) {
-    for (const msg of allMessages) {
+    for (const msg of messagesToInclude) {
       messages.push(msg);
     }
   } else {
-    const recent = allMessages.slice(-MAX_RECENT_MESSAGES);
     const olderCount = totalMessages - MAX_RECENT_MESSAGES;
     messages.push({
       role: "system",
       content: `[${olderCount} earlier messages have been compressed. The most recent ${MAX_RECENT_MESSAGES} messages follow.]`,
     });
-    for (const msg of recent) {
+    for (const msg of messagesToInclude) {
       messages.push(msg);
     }
   }
 
   // 4. Current user input
-  if (userInput) {
-    messages.push({ role: "user", content: userInput });
+  if (userInput !== undefined && userInput !== null) {
+    messages.push({ role: "user", content: String(userInput) });
   }
 
   // 5. Estimate tokens (rough heuristic: 1 token ≈ 4 chars)

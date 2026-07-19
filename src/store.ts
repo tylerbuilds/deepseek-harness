@@ -479,15 +479,22 @@ export class HarnessStore {
       .run(runId, new Date().toISOString(), type, JSON.stringify(payload));
   }
 
-  createSession(id: string, cwd: string, model: string): SessionRecord {
-    const now = new Date().toISOString();
-    this.db
-      .prepare(
-        "INSERT INTO sessions (id, created_at, updated_at, cwd, model) VALUES (?, ?, ?, ?, ?)"
-      )
-      .run(id, now, now, cwd, model);
-    return this.getSession(id);
-  }
+	createSession(id: string, cwd: string, model: string): SessionRecord {
+	    // Validate session ID: must be a non-empty string without control characters
+	    if (typeof id !== "string" || id.length === 0) {
+	      throw new HarnessError("invalid_session_id", "Session ID must be a non-empty string.");
+	    }
+	    if (/[\x00-\x1F\x7F]/.test(id)) {
+	      throw new HarnessError("invalid_session_id", "Session ID must not contain control characters.");
+	    }
+	    const now = new Date().toISOString();
+	    this.db
+	      .prepare(
+	        "INSERT INTO sessions (id, created_at, updated_at, cwd, model) VALUES (?, ?, ?, ?, ?)"
+	      )
+	      .run(id, now, now, cwd, model);
+	    return this.getSession(id);
+	  }
 
   getSession(id: string): SessionRecord {
     const row = this.db
@@ -510,9 +517,9 @@ export class HarnessStore {
   }
 
   listSessions(limit = 20): SessionRecord[] {
-    const rows = this.db
-      .prepare("SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?")
-      .all(limit) as Record<string, unknown>[];
+	    const rows = this.db
+	      .prepare("SELECT * FROM sessions ORDER BY updated_at DESC, id DESC LIMIT ?")
+	      .all(limit) as Record<string, unknown>[];
     return rows.map((row) => ({
       id: String(row.id),
       created_at: String(row.created_at),
@@ -526,19 +533,31 @@ export class HarnessStore {
     }));
   }
 
-  updateSession(id: string, updates: { summary?: string; message_count?: number; total_tokens?: number; total_cost_usd?: number }): void {
-    const now = new Date().toISOString();
-    const existing = this.getSession(id);
-    const summary = updates.summary ?? existing.summary;
-    const messageCount = updates.message_count ?? existing.message_count;
-    const totalTokens = updates.total_tokens ?? existing.total_tokens;
-    const totalCostUsd = updates.total_cost_usd ?? existing.total_cost_usd;
-    this.db
-      .prepare(
-        "UPDATE sessions SET updated_at = ?, summary = ?, message_count = ?, total_tokens = ?, total_cost_usd = ? WHERE id = ?"
-      )
-      .run(now, summary, messageCount, totalTokens, totalCostUsd, id);
-  }
+	updateSession(id: string, updates: { summary?: string; message_count?: number; total_tokens?: number; total_cost_usd?: number }): void {
+	    const now = new Date().toISOString();
+	    const existing = this.getSession(id);
+	    const summary = updates.summary ?? existing.summary;
+	    const rawMessageCount = updates.message_count ?? existing.message_count;
+	    const rawTotalTokens = updates.total_tokens ?? existing.total_tokens;
+	    const rawTotalCostUsd = updates.total_cost_usd ?? existing.total_cost_usd;
+
+	    // Validate numeric fields: must be non-negative finite numbers
+	    if (!Number.isFinite(rawMessageCount) || rawMessageCount < 0) {
+	      throw new HarnessError("invalid_update", "message_count must be a non-negative finite number.");
+	    }
+	    if (!Number.isFinite(rawTotalTokens) || rawTotalTokens < 0) {
+	      throw new HarnessError("invalid_update", "total_tokens must be a non-negative finite number.");
+	    }
+	    if (!Number.isFinite(rawTotalCostUsd) || rawTotalCostUsd < 0) {
+	      throw new HarnessError("invalid_update", "total_cost_usd must be a non-negative finite number.");
+	    }
+
+	    this.db
+	      .prepare(
+	        "UPDATE sessions SET updated_at = ?, summary = ?, message_count = ?, total_tokens = ?, total_cost_usd = ? WHERE id = ?"
+	      )
+	      .run(now, summary, rawMessageCount, rawTotalTokens, rawTotalCostUsd, id);
+	  }
 
   addMessage(sessionId: string, message: { role: string; content?: string | null; tool_calls_json?: string | null; tool_call_id?: string | null; token_count?: number | null }): number {
     // Validate session exists before inserting (FK is enforced, but this gives a typed error)
