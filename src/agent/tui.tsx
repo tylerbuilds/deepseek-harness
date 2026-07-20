@@ -27,7 +27,7 @@ function zeusError(raw: string): string {
   return raw;
 }
 
-type SlashCommand = { readonly kind: "exit" } | { readonly kind: "clear" } | { readonly kind: "message"; readonly message: string } | { readonly kind: "jobs"; readonly jobs: readonly CorpusJob[] } | { readonly kind: "thinking" };
+type SlashCommand = { readonly kind: "exit" } | { readonly kind: "clear" } | { readonly kind: "message"; readonly message: string } | { readonly kind: "jobs"; readonly jobs: readonly CorpusJob[] } | { readonly kind: "thinking" } | { readonly kind: "model" };
 
 export async function runTui(session: AgentSession, apiKey: string): Promise<void> {
   const instance = render(<ChatTui session={session} apiKey={apiKey} />, { alternateScreen: true, exitOnCtrlC: false, patchConsole: false });
@@ -44,6 +44,7 @@ function ChatTui({ session, apiKey }: { readonly session: AgentSession; readonly
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [jobs, setJobs] = useState<readonly CorpusJob[]>(() => loadCorpusJobs(defaultArtifactRoot()));
   const [approval, setApproval] = useState<ToolApprovalRequest | null>(null);
+  const [model, setModel] = useState(session.model);
   const approvalResolver = useRef<((choice: ApprovalChoice) => void) | null>(null);
   const turnController = useRef<AbortController | null>(null);
   const exitAfterTurn = useRef(false);
@@ -84,6 +85,13 @@ function ChatTui({ session, apiKey }: { readonly session: AgentSession; readonly
           dispatch({ type: "toggleThinking" });
           dispatch({ type: "message", message: state.showThinking ? "Thinking hidden." : "Thinking visible." });
           break;
+        case "model": {
+          const arg = input.split(/\s+/, 2)[1]?.toLowerCase();
+          if (arg === "pro") { setModel("deepseek-v4-pro"); session.model = "deepseek-v4-pro"; dispatch({ type: "message", message: "Engines: Pro. Full power to the reactors." }); }
+          else if (arg === "flash") { setModel("deepseek-v4-flash"); session.model = "deepseek-v4-flash"; dispatch({ type: "message", message: "Engines: Flash. Efficient and swift." }); }
+          else dispatch({ type: "message", message: "Usage: /model flash | /model pro" });
+          break;
+        }
         default: assertNever(command);
       }
       return;
@@ -170,7 +178,7 @@ function ChatTui({ session, apiKey }: { readonly session: AgentSession; readonly
   const showPanel = columns >= 76;
   return <Box width={columns} height={rows} flexDirection="column">
     <Box borderStyle="single" borderColor="yellow" paddingX={1} justifyContent="space-between">
-      <Text bold color="yellow">⚡ MorpheOS Code</Text><Text dimColor>{state.status === "running" ? "under way" : "standing by"} · {session.model === "deepseek-v4-pro" ? "Pro" : "Flash"}</Text>
+      <Text bold color="yellow">⚡ MorpheOS Code</Text><Text dimColor>{state.status === "running" ? "under way" : "standing by"} · {model === "deepseek-v4-pro" ? "Pro" : "Flash"}</Text>
     </Box>
     <Box flexGrow={1} overflow="hidden">
       <Box flexDirection="column" flexGrow={1} borderStyle="single" paddingX={1} overflow="hidden">
@@ -179,7 +187,7 @@ function ChatTui({ session, apiKey }: { readonly session: AgentSession; readonly
       {showPanel ? <Box width={32} flexDirection="column" borderStyle="single" paddingX={1}>
         <Text bold color="yellow">Captain's Log</Text>
         <Text dimColor wrap="truncate-end">{session.id}</Text>
-        <Text>{session.model === "deepseek-v4-pro" ? "Pro" : "Flash"} engines</Text>
+        <Text>{model === "deepseek-v4-pro" ? "Pro" : "Flash"} engines</Text>
         <Text>£{session.record.total_cost_usd.toFixed(6)}</Text>
         <Text>{session.record.total_tokens} tokens</Text>
         <Text bold color="yellow">Cargo Bay</Text>
@@ -199,13 +207,13 @@ function ChatTui({ session, apiKey }: { readonly session: AgentSession; readonly
 function slashCommand(input: string, session: AgentSession, showThinking: boolean): SlashCommand {
   const command = input.slice(1).split(/\s+/, 1)[0] ?? "";
   switch (command) {
-    case "help": return { kind: "message", message: `/help  /clear  /cost  /sessions  /jobs  /thinking  /exit
+    case "help": return { kind: "message", message: `/help  /clear  /model flash|pro  /cost  /sessions  /jobs  /thinking  /exit
 ${grey("Captain's bridge commands. All ship-shape and Bristol fashion.")}` };
     case "clear": return { kind: "clear" };
     case "cost": return { kind: "message", message: `Fuel consumed: £${session.record.total_cost_usd.toFixed(6)} (${session.record.total_tokens} tokens across ${session.record.message_count} messages)` };
     case "sessions": return { kind: "message", message: listSessions(session.store, 10).map((item) => `${item.id === session.id ? "*" : " "} ${item.id} ${item.model} £${item.total_cost_usd.toFixed(4)} ${item.summary || "-"}`).join("\n") || "No previous voyages found." };
     case "jobs": return { kind: "jobs", jobs: loadCorpusJobs(defaultArtifactRoot()) };
-    case "thinking": return { kind: "thinking" as const };
+    case "model": return { kind: "model" as const };
     case "exit": case "quit": return { kind: "exit" };
     default: return { kind: "message", message: `Unknown order: /${command}. Type /help for available commands, Captain.` };
   }

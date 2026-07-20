@@ -194,7 +194,7 @@ test("tuiReducer represents reasoning, tool activity and completed text", () => 
   assert.equal(state.status, "idle");
   assert.equal(state.tokens, 42);
   assert.deepEqual(lines, [
-    "captain › inspect the repo",
+    "user › inspect the repo",
     "zeus › I will inspect first.",
     "  ⚙ search_files {\"pattern\":\"*.ts\"}",
     "  ✓ search_files — 8 files",

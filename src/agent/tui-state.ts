@@ -74,7 +74,7 @@ function append(entries: readonly TranscriptEntry[], ...next: readonly Transcrip
 
 function prefix(kind: EntryKind): string {
   switch (kind) {
-    case "user": return "captain › ";
+    case "user": return "user › ";
     case "assistant": return "zeus › ";
     case "reasoning": return "think › ";
     case "tool": return "  ⚙ ";
