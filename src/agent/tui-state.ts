@@ -4,12 +4,12 @@ import type { AgentEvent } from "./events.js";
 type EntryKind = "user" | "assistant" | "reasoning" | "tool" | "tool_ok" | "tool_error" | "system" | "error";
 type TranscriptEntry = { readonly kind: EntryKind; readonly text: string };
 
-export type TuiState = { readonly entries: readonly TranscriptEntry[]; readonly currentText: string; readonly currentReasoning: string; readonly status: "idle" | "running"; readonly tokens: number };
+export type TuiState = { readonly entries: readonly TranscriptEntry[]; readonly currentText: string; readonly currentReasoning: string; readonly status: "idle" | "running"; readonly tokens: number; readonly showThinking: boolean };
 
 export type TuiAction = { readonly type: "submit"; readonly input: string } | { readonly type: "event"; readonly event: AgentEvent }
-  | { readonly type: "message"; readonly message: string } | { readonly type: "error"; readonly message: string } | { readonly type: "clear" };
+  | { readonly type: "message"; readonly message: string } | { readonly type: "error"; readonly message: string } | { readonly type: "clear" } | { readonly type: "toggleThinking" };
 
-export function initialTuiState(): TuiState { return { entries: [], currentText: "", currentReasoning: "", status: "idle", tokens: 0 }; }
+export function initialTuiState(): TuiState { return { entries: [], currentText: "", currentReasoning: "", status: "idle", tokens: 0, showThinking: false }; }
 
 export function tuiReducer(state: TuiState, action: TuiAction): TuiState {
   switch (action.type) {
@@ -21,6 +21,8 @@ export function tuiReducer(state: TuiState, action: TuiAction): TuiState {
       return { ...state, entries: append(state.entries, { kind: "error", text: action.message }), currentText: "", currentReasoning: "", status: "idle" };
     case "clear":
       return { ...state, entries: [], currentText: "", currentReasoning: "" };
+    case "toggleThinking":
+      return { ...state, showThinking: !state.showThinking };
     case "event":
       return reduceAgentEvent(state, action.event);
     default:
@@ -29,12 +31,13 @@ export function tuiReducer(state: TuiState, action: TuiAction): TuiState {
 }
 
 export function transcriptLines(state: TuiState, maxRows: number): readonly string[] {
-  const pending = [
+  const pending: TranscriptEntry[] = [
     ...state.entries,
-    ...(state.currentReasoning ? [{ kind: "reasoning", text: state.currentReasoning } satisfies TranscriptEntry] : []),
-    ...(state.currentText ? [{ kind: "assistant", text: state.currentText } satisfies TranscriptEntry] : []),
+    ...(state.currentReasoning ? [{ kind: "reasoning" as const, text: state.currentReasoning }] : []),
+    ...(state.currentText ? [{ kind: "assistant" as const, text: state.currentText }] : []),
   ];
-  return pending.flatMap((entry) => entry.text.split("\n").map((line, index) => `${index === 0 ? prefix(entry.kind) : "  "}${line}`))
+  const visible = state.showThinking ? pending : pending.filter((e) => e.kind !== "reasoning");
+  return visible.flatMap((entry) => entry.text.split("\n").map((line, index) => `${index === 0 ? prefix(entry.kind) : "  "}${line}`))
     .slice(-Math.max(0, maxRows));
 }
 

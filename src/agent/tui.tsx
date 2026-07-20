@@ -27,7 +27,7 @@ function zeusError(raw: string): string {
   return raw;
 }
 
-type SlashCommand = { readonly kind: "exit" } | { readonly kind: "clear" } | { readonly kind: "message"; readonly message: string } | { readonly kind: "jobs"; readonly jobs: readonly CorpusJob[] };
+type SlashCommand = { readonly kind: "exit" } | { readonly kind: "clear" } | { readonly kind: "message"; readonly message: string } | { readonly kind: "jobs"; readonly jobs: readonly CorpusJob[] } | { readonly kind: "thinking" };
 
 export async function runTui(session: AgentSession, apiKey: string): Promise<void> {
   const instance = render(<ChatTui session={session} apiKey={apiKey} />, { alternateScreen: true, exitOnCtrlC: false, patchConsole: false });
@@ -71,7 +71,7 @@ function ChatTui({ session, apiKey }: { readonly session: AgentSession; readonly
     setHistory((current) => [...current, input].slice(-100));
     setHistoryIndex(null);
     if (input.startsWith("/")) {
-      const command = slashCommand(input, session);
+      const command = slashCommand(input, session, state.showThinking);
       switch (command.kind) {
         case "exit": exit(); break;
         case "clear": dispatch({ type: "clear" }); break;
@@ -79,6 +79,10 @@ function ChatTui({ session, apiKey }: { readonly session: AgentSession; readonly
         case "jobs":
           setJobs(command.jobs);
           dispatch({ type: "message", message: command.jobs.map(formatCorpusJob).join("\n") || "No corpus jobs found." });
+          break;
+        case "thinking":
+          dispatch({ type: "toggleThinking" });
+          dispatch({ type: "message", message: state.showThinking ? "Thinking hidden." : "Thinking visible." });
           break;
         default: assertNever(command);
       }
@@ -192,15 +196,16 @@ function ChatTui({ session, apiKey }: { readonly session: AgentSession; readonly
   </Box>;
 }
 
-function slashCommand(input: string, session: AgentSession): SlashCommand {
+function slashCommand(input: string, session: AgentSession, showThinking: boolean): SlashCommand {
   const command = input.slice(1).split(/\s+/, 1)[0] ?? "";
   switch (command) {
-    case "help": return { kind: "message", message: `/help  /clear  /cost  /sessions  /jobs  /exit
+    case "help": return { kind: "message", message: `/help  /clear  /cost  /sessions  /jobs  /thinking  /exit
 ${grey("Captain's bridge commands. All ship-shape and Bristol fashion.")}` };
     case "clear": return { kind: "clear" };
     case "cost": return { kind: "message", message: `Fuel consumed: £${session.record.total_cost_usd.toFixed(6)} (${session.record.total_tokens} tokens across ${session.record.message_count} messages)` };
     case "sessions": return { kind: "message", message: listSessions(session.store, 10).map((item) => `${item.id === session.id ? "*" : " "} ${item.id} ${item.model} £${item.total_cost_usd.toFixed(4)} ${item.summary || "-"}`).join("\n") || "No previous voyages found." };
     case "jobs": return { kind: "jobs", jobs: loadCorpusJobs(defaultArtifactRoot()) };
+    case "thinking": return { kind: "thinking" as const };
     case "exit": case "quit": return { kind: "exit" };
     default: return { kind: "message", message: `Unknown order: /${command}. Type /help for available commands, Captain.` };
   }
