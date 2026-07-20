@@ -79,16 +79,11 @@ await test("CAT1: Malformed Inputs", async (t) => {
   });
 
   await t.test("run_command with shell metacharacters in directory-based params", async () => {
-    // The command param is expected to be a shell command, but if other params
-    // are interpolated into shell contexts, metas can be dangerous.
-    // Test: validate the tool itself doesn't crash on weird command strings
     const result = await registry.execute("run_command", {
-      command: "echo 'hello; rm -rf /; echo done'",
+      command: "echo 'hello $PATH $(whoami)'",
       timeout_ms: 2000,
     }, dir);
-    // Should complete without executing the dangerous payload
-    // Single quotes in shell prevent expansion
-    assert.ok(result.summary.includes("completed") || result.summary.includes("failed"), "should not hang");
+    assert.ok(result.summary.includes("completed") || result.summary.includes("failed") || result.summary.includes("BLOCKED"), "should not hang");
   });
 
   await t.test("search_content with empty pattern", async () => {

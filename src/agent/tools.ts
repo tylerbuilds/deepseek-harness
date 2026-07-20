@@ -391,6 +391,71 @@ function makeSearchFilesTool(): Tool {
   };
 }
 
+// ── Command safety classifier ──
+
+interface SafetyRule { pattern: RegExp; label: string; }
+
+const BLOCKED_COMMANDS: readonly SafetyRule[] = [
+  // rm on dangerous paths.  The path alternation is:
+  //   \/(?=\s|$|;|&)  – root directory "/" when it appears as a standalone path
+  //   ~(?=\s|$|;|&)   – home directory "~" as a standalone path
+  //   (?<!\w)\*(?!\w) – bare glob "*"
+  //   \$HOME\b       – $HOME variable
+  //   \/(etc|usr|var|boot|dev|sys|proc)\b" – dangerous top-level directories
+  // Handles short flags (-rf), long options (--no-preserve-root), and -- separator.
+  // Uses .*? (lazy) to skip over non-flag text between rm and the dangerous path.
+  { pattern: /\brm\s+.*?((\/(?=\s|$|;|&))|~(?=\s|$|;|&)|(?<!\w)\*(?!\w)|\$HOME\b|\/(etc|usr|var|boot|dev|sys|proc)\b)/, label: "destructive rm" },
+
+  { pattern: /\bsudo\b/, label: "sudo escalation" },
+
+  // git force push: force flag (-f, -F, --force) AND target main/master required.
+  // Two variants: flag before remote (git push --force origin main) and flag after branch (git push origin main --force).
+  { pattern: /\bgit\s+push\s+(?:-[fF]|--force)\b.*\s+(?:origin|upstream)\s+(?:main|master)\b/, label: "force push to main" },
+  { pattern: /\bgit\s+push\s+(?:origin|upstream)\s+(?:main|master)\s+(?:-[fF]|--force)\b/, label: "force push to main" },
+
+  { pattern: /\bcurl\b.*\|.*\b(sh|bash|zsh|dash)\b/, label: "curl-to-shell" },
+  { pattern: /\bwget\b.*\|.*\b(sh|bash|zsh|dash)\b/, label: "wget-to-shell" },
+
+  // chmod 777 (world-writable). Handles: -R, --recursive, and optional leading 0 (octal).
+  { pattern: /\bchmod\s+(?:-[Rr]\s+|--recursive\s+)?0?777\b/, label: "world-writable chmod" },
+
+  { pattern: /\bdd\s+if=/, label: "raw disk write" },
+
+  { pattern: /\bmkfs\./, label: "filesystem format" },
+
+  // fork bomb: :(){ :|:& };:  – the leading : is not a word char so \b is useless here.
+  { pattern: /:\(\)\s*\{/, label: "fork bomb" },
+
+  // eval: match eval followed by a non-alphanumeric character (space, quote, $, backtick, paren, or end-of-string).
+  // This catches: eval "$cmd", eval$(cmd), eval'$(cmd)', eval`cmd`, etc.
+  { pattern: /\beval(?:[\s'"$\x60(]|$)/, label: "eval injection" },
+
+  { pattern: /\bnpm\s+(?:publish|unpublish)\b/, label: "npm publish" },
+
+  { pattern: /\bdocker\s+exec\b/, label: "docker exec" },
+
+  // kill -9 (SIGKILL) – also catches: kill -s KILL, kill -s 9, kill -SIGKILL, kill -KILL.
+  { pattern: /\bkill\s+(?:-9\b|-(?:SIG)?KILL\b|-s\s+(?:KILL|9)\b)/, label: "SIGKILL" },
+
+  { pattern: /\b(?:shutdown|reboot|halt|poweroff)\b/, label: "system power" },
+];
+
+export function classifyCommand(command: string): string | null {
+  // Truncate at the first null byte: most system-call interfaces treat the
+  // command string as null-terminated, so anything after \0 is invisible to
+  // the OS.  We must classify only what the OS actually executes.
+  const nullTruncated = command.split("\0")[0];
+
+  // Normalize: collapse all whitespace sequences (spaces, tabs, newlines) to a
+  // single space, then trim.  This closes whitespace-based bypasses.
+  const trimmed = nullTruncated.trim();
+  const normalized = trimmed.replace(/\s+/g, " ");
+  for (const rule of BLOCKED_COMMANDS) {
+    if (rule.pattern.test(normalized)) return rule.label;
+  }
+  return null;
+}
+
 function makeRunCommandTool(): Tool {
   return {
     definition: {
@@ -404,6 +469,16 @@ function makeRunCommandTool(): Tool {
     tier: 2,
     async execute(params, cwd, signal): Promise<ToolResult> {
       const command = String(params.command);
+
+      // ── Destructive command safety gate ──
+      const blocked = classifyCommand(command);
+      if (blocked) {
+        return {
+          content: `Command blocked by safety gate: "${blocked}"\n\nThis command pattern is permanently restricted. Destructive operations that could compromise the system, delete data, or execute remote code are not allowed.`,
+          summary: `BLOCKED: ${blocked}`,
+          error: `safety_gate: ${blocked}`,
+        };
+      }
 
       let timeoutMs = 120_000;
       if (params.timeout_ms !== undefined && params.timeout_ms !== null) {
