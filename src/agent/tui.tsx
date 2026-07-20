@@ -27,7 +27,7 @@ function zeusError(raw: string): string {
   return raw;
 }
 
-type SlashCommand = { readonly kind: "exit" } | { readonly kind: "clear" } | { readonly kind: "message"; readonly message: string } | { readonly kind: "jobs"; readonly jobs: readonly CorpusJob[] } | { readonly kind: "thinking" } | { readonly kind: "model" };
+type SlashCommand = { readonly kind: "exit" } | { readonly kind: "clear" } | { readonly kind: "message"; readonly message: string } | { readonly kind: "jobs"; readonly jobs: readonly CorpusJob[] } | { readonly kind: "thinking" } | { readonly kind: "model" } | { readonly kind: "settings" };
 
 export async function runTui(session: AgentSession, apiKey: string): Promise<void> {
   const instance = render(<ChatTui session={session} apiKey={apiKey} />, { alternateScreen: true, exitOnCtrlC: false, patchConsole: false });
@@ -45,6 +45,8 @@ function ChatTui({ session, apiKey }: { readonly session: AgentSession; readonly
   const [jobs, setJobs] = useState<readonly CorpusJob[]>(() => loadCorpusJobs(defaultArtifactRoot()));
   const [approval, setApproval] = useState<ToolApprovalRequest | null>(null);
   const [model, setModel] = useState(session.model);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsIdx, setSettingsIdx] = useState(0);
   const approvalResolver = useRef<((choice: ApprovalChoice) => void) | null>(null);
   const turnController = useRef<AbortController | null>(null);
   const exitAfterTurn = useRef(false);
@@ -92,6 +94,7 @@ function ChatTui({ session, apiKey }: { readonly session: AgentSession; readonly
           else dispatch({ type: "message", message: "Usage: /model flash | /model pro" });
           break;
         }
+        case "settings": setShowSettings(true); break;
         default: assertNever(command);
       }
       return;
@@ -116,6 +119,24 @@ function ChatTui({ session, apiKey }: { readonly session: AgentSession; readonly
   };
 
   useInput((input, key) => {
+    // Settings panel navigation
+    if (showSettings) {
+      if (key.escape) { setShowSettings(false); return; }
+      if (key.upArrow) { setSettingsIdx((i) => Math.max(0, i - 1)); return; }
+      if (key.downArrow) { setSettingsIdx((i) => Math.min(2, i + 1)); return; }
+      if (key.leftArrow || key.rightArrow || key.return) {
+        switch (settingsIdx) {
+          case 0: { // Model toggle
+            const next = model === "deepseek-v4-pro" ? "deepseek-v4-flash" : "deepseek-v4-pro";
+            setModel(next); session.model = next; break;
+          }
+          case 1: dispatch({ type: "toggleThinking" }); break;
+          case 2: break; // Session info row — no action
+        }
+        return;
+      }
+      return;
+    }
     if (key.ctrl && input === "c") {
       if (turnController.current) {
         resolveApproval("decline");
@@ -194,6 +215,14 @@ function ChatTui({ session, apiKey }: { readonly session: AgentSession; readonly
         {jobs.length === 0 ? <Text dimColor>empty</Text> : jobs.map((job) => <Text key={job.jobId} wrap="truncate-end">{formatCorpusJob(job)}</Text>)}
       </Box> : null}
     </Box>
+    {showSettings ? <SettingsPanel
+      model={model}
+      thinking={state.showThinking}
+      cost={session.record.total_cost_usd}
+      tokens={session.record.total_tokens}
+      sessionId={session.id}
+      selected={settingsIdx}
+    /> : null}
     {approval ? <Box flexDirection="column" borderStyle="double" borderColor="yellow" paddingX={1}>
       <Text bold color="yellow">Captain's authorisation required</Text><Text>{formatApprovalRequest(approval)}</Text><Text dimColor>[y] once  [s] session  [n] decline</Text>
     </Box> : null}
@@ -207,13 +236,15 @@ function ChatTui({ session, apiKey }: { readonly session: AgentSession; readonly
 function slashCommand(input: string, session: AgentSession, showThinking: boolean): SlashCommand {
   const command = input.slice(1).split(/\s+/, 1)[0] ?? "";
   switch (command) {
-    case "help": return { kind: "message", message: `/help  /clear  /model flash|pro  /cost  /sessions  /jobs  /thinking  /exit
+    case "help": return { kind: "message", message: `/help  /clear  /settings  /model flash|pro  /cost  /sessions  /jobs  /thinking  /exit
 ${grey("Captain's bridge commands. All ship-shape and Bristol fashion.")}` };
     case "clear": return { kind: "clear" };
     case "cost": return { kind: "message", message: `Fuel consumed: £${session.record.total_cost_usd.toFixed(6)} (${session.record.total_tokens} tokens across ${session.record.message_count} messages)` };
     case "sessions": return { kind: "message", message: listSessions(session.store, 10).map((item) => `${item.id === session.id ? "*" : " "} ${item.id} ${item.model} £${item.total_cost_usd.toFixed(4)} ${item.summary || "-"}`).join("\n") || "No previous voyages found." };
     case "jobs": return { kind: "jobs", jobs: loadCorpusJobs(defaultArtifactRoot()) };
     case "model": return { kind: "model" as const };
+    case "thinking": return { kind: "thinking" as const };
+    case "settings": return { kind: "settings" as const };
     case "exit": case "quit": return { kind: "exit" };
     default: return { kind: "message", message: `Unknown order: /${command}. Type /help for available commands, Captain.` };
   }
@@ -221,4 +252,42 @@ ${grey("Captain's bridge commands. All ship-shape and Bristol fashion.")}` };
 
 function assertNever(value: never): never {
   throw new HarnessError("unexpected_tui_variant", `Unexpected TUI variant: ${String(value)}.`);
+}
+
+function SettingsPanel({ model, thinking, cost, tokens, sessionId, selected }: {
+  readonly model: string;
+  readonly thinking: boolean;
+  readonly cost: number;
+  readonly tokens: number;
+  readonly sessionId: string;
+  readonly selected: number;
+}) {
+  const rows: Array<{ label: string; value: string; active: boolean; toggle: boolean }> = [
+    { label: "Model", value: model === "deepseek-v4-pro" ? "Pro" : "Flash", active: selected === 0, toggle: true },
+    { label: "Thinking", value: thinking ? "ON" : "OFF", active: selected === 1, toggle: true },
+    { label: "Session", value: sessionId.slice(0, 20), active: selected === 2, toggle: false },
+  ];
+
+  return (
+    <Box flexDirection="column" borderStyle="double" borderColor="yellow" paddingX={2} paddingY={1} marginY={1}>
+      <Box marginBottom={1}>
+        <Text bold color="yellow">⚙ Bridge Settings</Text>
+      </Box>
+      {rows.map((row, i) => (
+        <Box key={row.label} paddingLeft={1}>
+          <Text color={row.active ? "yellow" : undefined} bold={row.active}>
+            {row.active ? "▶" : " "} {row.label.padEnd(10)}
+          </Text>
+          <Text>{row.toggle ? `[ ${row.value} ]` : row.value}</Text>
+          {i === 2 ? null : <Text dimColor>  ←→ toggle</Text>}
+        </Box>
+      ))}
+      <Box marginTop={1} paddingLeft={1}>
+        <Text dimColor>Cost  £{cost.toFixed(6)} · {tokens} tokens</Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text dimColor>↑↓ navigate  ←→ change  esc close</Text>
+      </Box>
+    </Box>
+  );
 }
